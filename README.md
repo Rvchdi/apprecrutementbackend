@@ -1,66 +1,258 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Backend de la Plateforme de Recrutement avec IA
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Ce document présente l'architecture et les fonctionnalités du backend de notre plateforme de recrutement, qui connecte les étudiants aux entreprises et intègre des fonctionnalités d'IA pour l'analyse des CV.
 
-## About Laravel
+## Technologies utilisées
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- **Framework**: Laravel 10 (PHP 8.2)
+- **Base de données**: MySQL 8.0
+- **Authentification**: Laravel Sanctum
+- **Intégration IA**: API OpenAI
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Structure de la base de données
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+La base de données est organisée autour de plusieurs entités principales:
 
-## Learning Laravel
+### Utilisateurs et Profils
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+- **USERS**: Table centrale qui gère tous les utilisateurs (admin, étudiants, entreprises)
+- **ETUDIANTS**: Profils spécifiques pour les étudiants cherchant des opportunités
+- **ENTREPRISES**: Profils pour les entreprises qui publient des offres
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+### Offres et Candidatures
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+- **OFFRES**: Opportunités publiées par les entreprises
+- **CANDIDATURES**: Demandes des étudiants pour des offres spécifiques
+- **COMPETENCES**: Compétences techniques et professionnelles
+- **ETUDIANT_COMPETENCES**: Association entre étudiants et compétences
+- **OFFRE_COMPETENCES**: Compétences requises pour une offre
 
-## Laravel Sponsors
+### Système de Tests
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+- **TESTS**: Tests QCM associés aux offres d'emploi
+- **QUESTIONS**: Questions incluses dans les tests
+- **REPONSES**: Options pour chaque question
+- **REPONSES_ETUDIANTS**: Réponses fournies par les étudiants
 
-### Premium Partners
+### Notifications
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[WebReinvent](https://webreinvent.com/)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Jump24](https://jump24.co.uk)**
-- **[Redberry](https://redberry.international/laravel/)**
-- **[Active Logic](https://activelogic.com)**
-- **[byte5](https://byte5.de)**
-- **[OP.GG](https://op.gg)**
+- **NOTIFICATIONS**: Système de notifications pour tous les utilisateurs
 
-## Contributing
+## API RESTful
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Le backend expose une API RESTful sécurisée avec les endpoints suivants:
 
-## Code of Conduct
+### Authentification
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+- `POST /api/register`: Inscription (étudiants ou entreprises)
+- `POST /api/login`: Connexion
+- `POST /api/logout`: Déconnexion
+- `GET /api/user`: Récupération des informations de l'utilisateur connecté
 
-## Security Vulnerabilities
+### Gestion des profils
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+- `GET|PUT /api/etudiants/{id}`: Récupération et mise à jour du profil étudiant
+- `GET|PUT /api/entreprises/{id}`: Récupération et mise à jour du profil entreprise
+- `POST /api/upload/cv`: Upload de CV pour les étudiants
 
-## License
+### Offres et candidatures
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+- `GET /api/offres`: Liste des offres avec filtrage
+- `POST /api/offres`: Création d'une nouvelle offre (entreprises)
+- `GET|PUT|DELETE /api/offres/{id}`: Gestion d'une offre spécifique
+- `POST /api/candidatures`: Soumission d'une candidature (étudiants)
+- `GET|PUT /api/candidatures/{id}`: Gestion d'une candidature
+
+### Système de tests
+
+- `POST /api/tests`: Création d'un test (entreprises)
+- `GET /api/tests/{id}`: Récupération des détails d'un test
+- `POST /api/tests/{id}/submit`: Soumission d'un test complété (étudiants)
+- `GET /api/tests/{id}/results`: Récupération des résultats d'un test
+
+### Compétences
+
+- `GET /api/competences`: Liste de toutes les compétences
+- `GET /api/etudiants/{id}/competences`: Compétences d'un étudiant
+- `PUT /api/etudiants/{id}/competences`: Mise à jour des compétences d'un étudiant
+
+### Administration
+
+- `GET /api/admin/users`: Gestion des utilisateurs (admin uniquement)
+- `PUT /api/admin/entreprises/{id}/verify`: Vérification d'une entreprise
+- `GET /api/admin/statistics`: Statistiques de la plateforme
+
+## Intégration de l'IA
+
+### Analyse de CV
+
+Le backend intègre un service d'analyse de CV qui utilise l'API OpenAI pour:
+
+1. Extraire le texte des CV (formats PDF, DOCX)
+2. Analyser le texte pour identifier les compétences clés
+3. Générer un résumé professionnel pour le profil de l'étudiant
+
+```php
+// Exemple de service d'analyse de CV
+class CvAnalysisService
+{
+    protected $openai;
+    
+    public function __construct()
+    {
+        $this->openai = OpenAI::client(config('services.openai.api_key'));
+    }
+    
+    public function analyzeCV($cvText)
+    {
+        // Appel à l'API OpenAI pour analyser le CV
+        $response = $this->openai->chat()->create([
+            'model' => 'gpt-4',
+            'messages' => [
+                ['role' => 'system', 'content' => 'Analysez ce CV et extrayez les compétences principales.'],
+                ['role' => 'user', 'content' => $cvText]
+            ],
+        ]);
+        
+        return $response->choices[0]->message->content;
+    }
+    
+    public function generateSummary($cvText)
+    {
+        // Génération d'un résumé professionnel
+        $response = $this->openai->chat()->create([
+            'model' => 'gpt-4',
+            'messages' => [
+                ['role' => 'system', 'content' => 'Créez un résumé professionnel concis à partir de ce CV.'],
+                ['role' => 'user', 'content' => $cvText]
+            ],
+        ]);
+        
+        return $response->choices[0]->message->content;
+    }
+}
+```
+
+### Matching Intelligent
+
+Un service de matching qui utilise les compétences et préférences des étudiants pour recommander des offres pertinentes:
+
+```php
+class MatchingService
+{
+    public function getMatchingOffres(Etudiant $etudiant, $limit = 10)
+    {
+        // Récupérer les compétences de l'étudiant
+        $competencesIds = $etudiant->competences->pluck('id')->toArray();
+        
+        // Trouver les offres qui correspondent aux compétences
+        $offres = Offre::whereHas('competences', function($query) use ($competencesIds) {
+                $query->whereIn('competence_id', $competencesIds);
+            })
+            ->where('niveau_requis', '<=', $etudiant->niveau_etude)
+            ->where('statut', 'active')
+            ->withCount(['competences' => function($query) use ($competencesIds) {
+                $query->whereIn('competence_id', $competencesIds);
+            }])
+            ->orderByDesc('competences_count')
+            ->limit($limit)
+            ->get();
+            
+        return $offres;
+    }
+}
+```
+
+## Sécurité
+
+Le backend implémente plusieurs couches de sécurité:
+
+- **Authentification**: Laravel Sanctum pour l'authentification API par token
+- **Autorisation**: Middlewares et policies pour restreindre l'accès aux ressources
+- **Validation**: Validation stricte des données entrantes
+- **Protection CSRF**: Pour les endpoints sensibles
+- **Rate Limiting**: Limitation des requêtes pour prévenir les abus
+
+Exemple de middleware d'autorisation:
+
+```php
+class EnsureUserHasRole
+{
+    public function handle($request, Closure $next, $role)
+    {
+        if (!$request->user() || $request->user()->role !== $role) {
+            return response()->json(['message' => 'Accès non autorisé'], 403);
+        }
+
+        return $next($request);
+    }
+}
+```
+
+## Installation et configuration
+
+1. Cloner le dépôt:
+   ```bash
+   git clone [url-du-repo]
+   cd recrutement-app
+   ```
+
+2. Installer les dépendances:
+   ```bash
+   composer install
+   ```
+
+3. Configurer l'environnement:
+   ```bash
+   cp .env.example .env
+   php artisan key:generate
+   ```
+
+4. Configurer la base de données dans le fichier `.env`
+
+5. Exécuter les migrations et seeders:
+   ```bash
+   php artisan migrate --seed
+   ```
+
+6. Configurer l'API OpenAI dans le fichier `.env`:
+   ```
+   OPENAI_API_KEY=votre-clé-api
+   ```
+
+7. Démarrer le serveur:
+   ```bash
+   php artisan serve
+   ```
+
+## Tests
+
+Exécuter les tests avec PHPUnit:
+
+```bash
+php artisan test
+```
+
+## Documentation API
+
+Une documentation Swagger complète de l'API est disponible à l'adresse:
+
+```
+/api/documentation
+```
+
+## Mise en production
+
+Pour le déploiement en production, assurez-vous de:
+
+1. Configurer un serveur web (Nginx recommandé) avec PHP-FPM
+2. Activer les optimisations Laravel:
+   ```bash
+   php artisan config:cache
+   php artisan route:cache
+   php artisan view:cache
+   ```
+3. Configurer les queues pour les tâches asynchrones:
+   ```bash
+   php artisan queue:work
+   ```
