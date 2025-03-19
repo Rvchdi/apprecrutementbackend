@@ -1,9 +1,13 @@
 <?php
 
 use App\Http\Controllers\API\AuthController;
-use App\Http\Controllers\API\EtudiantDashboardController;
-use App\Http\Controllers\API\EtudiantCandidatureController;
+use App\Http\Controllers\API\CandidatureController;
 use App\Http\Controllers\API\OffreController;
+use App\Http\Controllers\API\TestController;
+use App\Http\Controllers\API\CompetenceController;
+use App\Http\Controllers\API\NotificationController;
+use App\Http\Controllers\API\MessageController;
+use App\Http\Controllers\API\EtudiantController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -23,56 +27,62 @@ Route::prefix('auth')->group(function () {
     });
 });
 
-// Routes publiques pour les offres
-Route::prefix('offres')->group(function () {
-    Route::get('/', [OffreController::class, 'index']);
-    Route::get('/{id}', [OffreController::class, 'show']);
-    Route::get('/competences/list', [OffreController::class, 'getCompetences']);
-    Route::get('/statistics/general', [OffreController::class, 'getStats']);
-});
+// Routes publiques
+Route::get('offres', [OffreController::class, 'index']);
+Route::get('offres/{id}', [OffreController::class, 'show']);
+Route::get('competences', [CompetenceController::class, 'index']);
 
-// Routes pour le dashboard étudiant (protégées par authentification et vérification d'email)
-Route::middleware(['auth:sanctum', 'verified.api'])->group(function () {
-    // Dashboard étudiant
-    Route::prefix('etudiant/dashboard')->group(function () {
-        // Résumé du dashboard
-        Route::get('/summary', [EtudiantDashboardController::class, 'getSummary']);
-        
-        // Gestion du profil
-        Route::get('/profile', [EtudiantDashboardController::class, 'getProfile']);
-        Route::put('/profile', [EtudiantDashboardController::class, 'updateProfile']);
-        Route::post('/profile/cv', [EtudiantDashboardController::class, 'uploadCV']);
-        
-        // Gestion des compétences
-        Route::get('/competences', [EtudiantDashboardController::class, 'getCompetences']);
-        Route::post('/competences', [EtudiantDashboardController::class, 'addCompetence']);
-        Route::put('/competences/{competence_id}', [EtudiantDashboardController::class, 'updateCompetenceLevel']);
-        Route::delete('/competences/{competence_id}', [EtudiantDashboardController::class, 'removeCompetence']);
-        
-        // Gestion des candidatures
-        Route::get('/candidatures', [EtudiantDashboardController::class, 'getCandidatures']);
-        Route::get('/candidatures/{candidature_id}', [EtudiantDashboardController::class, 'getCandidatureDetails']);
-        
-        // Recommandations d'offres
-        Route::get('/recommended-offers', [EtudiantDashboardController::class, 'getRecommendedOffers']);
-        
-        // Notifications
-        Route::get('/notifications', [EtudiantDashboardController::class, 'getNotifications']);
-        Route::put('/notifications/{notification_id}/read', [EtudiantDashboardController::class, 'markNotificationAsRead']);
-    });
+// Routes protégées qui nécessitent une authentification
+Route::middleware('auth:sanctum')->group(function () {
+    // Profil étudiant
+    Route::get('etudiant/profile', [EtudiantController::class, 'getProfile']);
+    Route::put('etudiant/profile', [EtudiantController::class, 'updateProfile']);
+    Route::post('etudiant/profile/cv', [EtudiantController::class, 'uploadCV']);
+    Route::get('etudiant/dashboard/summary', [EtudiantController::class, 'getSummary']);
     
-    // Fonctionnalités de candidature
-    Route::prefix('etudiant/candidatures')->group(function () {
-        // Parcourir les offres disponibles
-        Route::get('/available-offers', [EtudiantCandidatureController::class, 'getAvailableOffers']);
-        Route::get('/available-offers/{offre_id}', [EtudiantCandidatureController::class, 'getOfferDetails']);
-        
-        // Postuler et gérer les candidatures
-        Route::post('/apply/{offre_id}', [EtudiantCandidatureController::class, 'applyToOffer']);
-        Route::delete('/{candidature_id}', [EtudiantCandidatureController::class, 'cancelApplication']);
-        
-        // Tests associés aux candidatures
-        Route::get('/{candidature_id}/test', [EtudiantCandidatureController::class, 'getTest']);
-        Route::post('/{candidature_id}/test/submit', [EtudiantCandidatureController::class, 'submitTest']);
-    });
+    // Offres
+    Route::post('offres', [OffreController::class, 'store']);
+    Route::put('offres/{id}', [OffreController::class, 'update']);
+    Route::delete('offres/{id}', [OffreController::class, 'destroy']);
+    Route::get('entreprise/offres', [OffreController::class, 'getEntrepriseOffres']);
+    Route::get('entreprise/statistiques', [OffreController::class, 'getEntrepriseStatistiques']);
+    
+    // Candidatures
+    Route::get('etudiant/candidatures', [CandidatureController::class, 'getEtudiantCandidatures']);
+    Route::get('entreprise/candidatures', [CandidatureController::class, 'getEntrepriseCandidatures']);
+    Route::post('offres/{id}/postuler', [CandidatureController::class, 'postuler']);
+    Route::get('offres/{id}/candidature-status', [CandidatureController::class, 'getCandidatureStatus']);
+    Route::put('candidatures/{id}/status', [CandidatureController::class, 'updateStatus']);
+    Route::post('offres/{id}/save', [CandidatureController::class, 'saveOffre']);
+    Route::delete('offres/{id}/save', [CandidatureController::class, 'unsaveOffre']);
+    
+    // Tests
+    Route::get('tests/{id}', [TestController::class, 'show']);
+    Route::post('tests/{id}/submit', [TestController::class, 'submitTest']);
+    Route::get('etudiant/tests', [TestController::class, 'getStudentTests']);
+    Route::get('entreprise/tests/results', [TestController::class, 'getEntrepriseTestResults']);
+    
+    // Compétences
+    Route::get('etudiant/competences', [CompetenceController::class, 'getEtudiantCompetences']);
+    Route::post('etudiant/competences', [CompetenceController::class, 'addCompetence']);
+    Route::put('etudiant/competences/{id}', [CompetenceController::class, 'updateCompetence']);
+    Route::delete('etudiant/competences/{id}', [CompetenceController::class, 'removeCompetence']);
+    Route::get('etudiant/competences/recommandees', [CompetenceController::class, 'getRecommendedCompetences']);
+    
+    // Notifications
+    Route::get('notifications', [NotificationController::class, 'index']);
+    Route::patch('notifications/{id}/read', [NotificationController::class, 'markAsRead']);
+    Route::patch('notifications/mark-all-read', [NotificationController::class, 'markAllAsRead']);
+    Route::delete('notifications/{id}', [NotificationController::class, 'destroy']);
+    Route::delete('notifications/bulk', [NotificationController::class, 'bulkDestroy']);
+    Route::get('notifications/unread-count', [NotificationController::class, 'getUnreadCount']);
+    
+    // Messagerie
+    Route::get('conversations', [MessageController::class, 'getConversations']);
+    Route::get('conversations/{id}/messages', [MessageController::class, 'getMessages']);
+    Route::post('conversations/{id}/messages', [MessageController::class, 'sendMessage']);
+    Route::post('conversations', [MessageController::class, 'createConversation']);
+    Route::patch('conversations/{id}/read', [MessageController::class, 'markAllAsRead']);
+    Route::get('messages/unread-count', [MessageController::class, 'getUnreadCount']);
+    Route::post('candidatures/{id}/conversation', [MessageController::class, 'createFromCandidature']);
 });
