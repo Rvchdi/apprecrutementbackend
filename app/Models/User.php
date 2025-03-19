@@ -97,4 +97,15 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return $this->role === 'entreprise';
     }
+    public function offres_sauvegardees()
+    {
+        return $this->belongsToMany(Offre::class, 'user_offre_favoris')
+                    ->withTimestamps();
+    }
+    public function conversations()
+    {
+        return $this->belongsToMany(Conversation::class, 'conversation_participants')
+                    ->withTimestamps();
+    }
+
 }

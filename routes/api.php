@@ -20,8 +20,6 @@ Route::prefix('auth')->group(function () {
     
     // Routes qui nécessitent une authentification ET une vérification d'email
     Route::middleware(['auth:sanctum', 'verified.api'])->group(function () {
-        // Ajoutez ici les routes qui requièrent un email vérifié
-        // Par exemple:
-        // Route::post('update-profile', [ProfileController::class, 'update']);
+        
     });
 });

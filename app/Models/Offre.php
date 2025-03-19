@@ -18,7 +18,7 @@ class Offre extends Model
         'entreprise_id',
         'titre',
         'description',
-        'type', // 'stage', 'emploi', 'alternance'
+        'type',
         'niveau_requis',
         'competences_requises',
         'localisation',
@@ -26,7 +26,8 @@ class Offre extends Model
         'date_debut',
         'duree',
         'test_requis',
-        'statut', // 'active', 'inactive', 'cloturee'
+        'statut',
+        'vues_count', // Ajouter ce champ
     ];
 
     /**
