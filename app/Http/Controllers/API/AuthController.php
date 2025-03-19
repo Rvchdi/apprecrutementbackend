@@ -14,6 +14,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Support\Str;
+use App\Notifications\VerifyEmailNotification;
+use Illuminate\Support\Facades\URL;
+use Carbon\Carbon;
 
 class AuthController extends Controller
 {
@@ -94,6 +97,7 @@ class AuthController extends Controller
                 'password' => Hash::make($request->password),
                 'telephone' => $request->telephone,
                 'role' => $request->role,
+                'email_verified_at' => null,
             ]);
 
             // Créer le profil spécifique en fonction du rôle
@@ -160,15 +164,33 @@ class AuthController extends Controller
                 ]);
             }
 
-            // Envoyer l'événement de création d'un nouvel utilisateur
-            event(new Registered($user));
+                // Générer un token de vérification pour l'email
+                $verificationToken = $this->generateVerificationToken($user);
 
-            DB::commit();
+                // Ajouter des logs pour le débogage
+                \Log::info('Envoi de l\'email de vérification à ' . $user->email . ' avec le token ' . $verificationToken);
 
-            return response()->json([
-                'message' => 'Utilisateur créé avec succès',
-                'user' => $user
-            ], 201);
+                try {
+                    // Envoyer l'email de vérification
+                    $user->notify(new VerifyEmailNotification($verificationToken));
+                    \Log::info('Email de vérification envoyé avec succès');
+                } catch (\Exception $e) {
+                    \Log::error('Erreur lors de l\'envoi de l\'email de vérification: ' . $e->getMessage());
+                }
+
+                DB::commit();
+
+                // Générer un token API pour la session
+                $token = $user->createToken('auth_token')->plainTextToken;
+
+                // Pour faciliter les tests, inclure le token de vérification dans la réponse
+                return response()->json([
+                    'message' => 'Utilisateur créé avec succès. Veuillez vérifier votre adresse email.',
+                    'user' => $user,
+                    'token' => $token,
+                    'token_type' => 'Bearer',
+                    'verification_token' => $verificationToken // Uniquement pour les tests, à supprimer en production
+                ], 201);
         } catch (\Exception $e) {
             \Log::error('Erreur : ' . $e->getMessage(), [
                 'exception' => $e
@@ -186,6 +208,26 @@ class AuthController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+    
+    /**
+     * Générer un token de vérification pour l'email
+     * 
+     * @param User $user
+     * @return string
+     */
+    private function generateVerificationToken(User $user)
+    {
+        $token = Str::random(60);
+        
+        // Stocker le token dans la base de données
+        DB::table('verification_tokens')->insert([
+            'user_id' => $user->id,
+            'token' => $token,
+            'created_at' => now()
+        ]);
+        
+        return $token;
     }
 
     /**
@@ -220,6 +262,26 @@ class AuthController extends Controller
         ], 401);
     }
     
+    // Vérifier si l'email a été vérifié
+    if ($user->email_verified_at === null) {
+        // Créer un token pour la session mais avertir que l'email n'est pas vérifié
+        $token = $user->createToken('auth_token')->plainTextToken;
+        
+        return response()->json([
+            'message' => 'Connexion réussie, mais votre adresse email n\'a pas été vérifiée.',
+            'email_verified' => false,
+            'user' => [
+                'id' => $user->id,
+                'nom' => $user->nom,
+                'prenom' => $user->prenom,
+                'email' => $user->email,
+                'role' => $user->role
+            ],
+            'token' => $token,
+            'token_type' => 'Bearer'
+        ], 200);
+    }
+    
     // Créer un token pour l'utilisateur
     $token = $user->createToken('auth_token')->plainTextToken;
     // Mettre à jour la date de dernière connexion
@@ -237,6 +299,7 @@ class AuthController extends Controller
     // Structure de réponse adaptée au frontend React
     return response()->json([
         'message' => 'Connexion réussie',
+        'email_verified' => true,
         'user' => [
             'id' => $user->id,
             'nom' => $user->nom,
@@ -284,7 +347,8 @@ class AuthController extends Controller
         }
 
         return response()->json([
-            'user' => $user
+            'user' => $user,
+            'email_verified' => $user->email_verified_at !== null
         ]);
     }
 
@@ -297,24 +361,45 @@ class AuthController extends Controller
     public function verifyEmail(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'id' => 'required|integer',
-            'hash' => 'required|string',
+            'token' => 'required|string',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
-                'message' => 'Données invalides',
+                'message' => 'Token de vérification invalide',
                 'errors' => $validator->errors()
             ], 422);
         }
 
-        $user = User::findOrFail($request->id);
+        // Rechercher le token dans la base de données
+        $verificationData = DB::table('verification_tokens')
+            ->where('token', $request->token)
+            ->first();
 
-        // Vérifier que le hash est valide
-        if (!hash_equals(sha1($user->email), $request->hash)) {
+        if (!$verificationData) {
             return response()->json([
-                'message' => 'Lien de vérification invalide'
-            ], 401);
+                'message' => 'Lien de vérification invalide ou expiré'
+            ], 400);
+        }
+
+        // Vérifier que le token n'est pas expiré (24h)
+        $tokenCreatedAt = Carbon::parse($verificationData->created_at);
+        if (now()->diffInHours($tokenCreatedAt) > 24) {
+            // Supprimer le token expiré
+            DB::table('verification_tokens')->where('token', $request->token)->delete();
+            
+            return response()->json([
+                'message' => 'Lien de vérification expiré. Veuillez demander un nouveau lien.'
+            ], 400);
+        }
+
+        // Récupérer l'utilisateur associé au token
+        $user = User::find($verificationData->user_id);
+        
+        if (!$user) {
+            return response()->json([
+                'message' => 'Utilisateur non trouvé'
+            ], 404);
         }
 
         // Si l'email est déjà vérifié
@@ -324,11 +409,46 @@ class AuthController extends Controller
             ]);
         }
 
+        // Marquer l'email comme vérifié
         $user->email_verified_at = now();
         $user->save();
 
+        // Supprimer le token après vérification
+        DB::table('verification_tokens')->where('token', $request->token)->delete();
+
         return response()->json([
-            'message' => 'Email vérifié avec succès'
+            'message' => 'Votre adresse email a été vérifiée avec succès'
+        ]);
+    }
+
+    /**
+     * Renvoyer un email de vérification
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function resendVerificationEmail(Request $request)
+    {
+        $user = $request->user();
+
+        // Vérifier si l'email est déjà vérifié
+        if ($user->email_verified_at !== null) {
+            return response()->json([
+                'message' => 'Votre adresse email est déjà vérifiée'
+            ]);
+        }
+
+        // Supprimer les anciens tokens pour cet utilisateur
+        DB::table('verification_tokens')->where('user_id', $user->id)->delete();
+
+        // Générer un nouveau token
+        $verificationToken = $this->generateVerificationToken($user);
+
+        // Envoyer l'email de vérification
+        $user->notify(new VerifyEmailNotification($verificationToken));
+
+        return response()->json([
+            'message' => 'Un nouvel email de vérification a été envoyé'
         ]);
     }
 
@@ -363,8 +483,11 @@ class AuthController extends Controller
             ]
         );
 
-        // Envoyer le lien de réinitialisation par email
-        // TODO: Logique d'envoi d'email
+        // Récupérer l'utilisateur pour envoyer l'email
+        $user = User::where('email', $request->email)->first();
+        
+        // TODO: Créer et envoyer une notification pour la réinitialisation du mot de passe
+        // $user->notify(new ResetPasswordNotification($token));
 
         return response()->json([
             'message' => 'Lien de réinitialisation envoyé par email'
@@ -404,7 +527,7 @@ class AuthController extends Controller
         }
 
         // Vérifier que le token n'est pas expiré (24h)
-        $tokenCreatedAt = \Carbon\Carbon::parse($tokenData->created_at);
+        $tokenCreatedAt = Carbon::parse($tokenData->created_at);
         if (now()->diffInHours($tokenCreatedAt) > 24) {
             return response()->json([
                 'message' => 'Token expiré'
