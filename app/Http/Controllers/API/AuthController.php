@@ -274,19 +274,20 @@ class AuthController extends Controller
      */
     public function me(Request $request)
     {
-        $user = $request->user();
-
+        $user = $request->user(); // Récupérer l'utilisateur authentifié
+    
         // Charger les informations supplémentaires en fonction du rôle
         if ($user->role === 'etudiant') {
             $user->load(['etudiant', 'etudiant.competences']);
         } elseif ($user->role === 'entreprise') {
             $user->load('entreprise');
         }
-
+    
         return response()->json([
             'user' => $user
         ]);
     }
+    
 
     /**
      * Vérifier l'email d'un utilisateur
