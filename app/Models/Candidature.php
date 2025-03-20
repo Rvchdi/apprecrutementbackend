@@ -18,7 +18,7 @@ class Candidature extends Model
         'etudiant_id',
         'offre_id',
         'lettre_motivation',
-        'statut',
+        'statut', // 'en_attente', 'vue', 'entretien', 'acceptee', 'refusee'
         'score_test',
         'test_complete',
         'date_candidature',
