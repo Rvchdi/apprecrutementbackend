@@ -82,17 +82,27 @@ try {
     
     
 
-    // Mettre à jour une offre d'emploi
+
     public function update(Request $request, $id)
     {
+        // Vérification que l'utilisateur a une entreprise associée
+        if (Auth::user()->entreprise === null) {
+            Log::warning('Utilisateur sans entreprise associée', ['user_id' => Auth::id()]);
+            return response()->json(['message' => 'Entreprise non associée à l\'utilisateur'], 403);
+        }
+    
+        // Récupération de l'offre
         $offre = Offre::where('id', $id)
                       ->where('entreprise_id', Auth::user()->entreprise->id)
                       ->first();
-
+    
+        // Vérification si l'offre existe
         if (!$offre) {
+            Log::warning('Offre non trouvée ou non autorisée', ['offre_id' => $id, 'user_id' => Auth::id()]);
             return response()->json(['message' => 'Offre non trouvée ou non autorisée'], 403);
         }
-
+    
+        // Validation des données envoyées
         $request->validate([
             'titre' => 'sometimes|string|max:255',
             'description' => 'sometimes|string',
@@ -106,11 +116,41 @@ try {
             'test_requis' => 'sometimes|boolean',
             'statut' => 'sometimes|string|in:active,inactive,cloturee',
         ]);
-
-        $offre->update($request->all());
-
-        return response()->json(['message' => 'Offre mise à jour avec succès', 'offre' => $offre], 200);
+    
+        // Log des données envoyées par l'utilisateur
+        Log::info('Données de mise à jour de l\'offre', ['offre_id' => $id, 'data' => $request->all()]);
+    
+        // Mise à jour de l'offre
+        $allowedFields = $request->only([
+            'titre',
+            'description',
+            'type',
+            'niveau_requis',
+            'competences_requises',
+            'localisation',
+            'remuneration',
+            'date_debut',
+            'duree',
+            'test_requis',
+            'statut'
+        ]);
+    
+        // Log avant la mise à jour
+        Log::info('Tentative de mise à jour de l\'offre', ['offre_id' => $id, 'updated_fields' => $allowedFields]);
+    
+        // Effectuer la mise à jour
+        $offreUpdated = $offre->update($allowedFields);
+    
+        // Vérifier si la mise à jour a réussi
+        if ($offreUpdated) {
+            Log::info('Offre mise à jour avec succès', ['offre_id' => $id]);
+            return response()->json(['message' => 'Offre mise à jour avec succès', 'offre' => $offre], 200);
+        } else {
+            Log::error('Échec de la mise à jour de l\'offre', ['offre_id' => $id]);
+            return response()->json(['message' => 'Échec de la mise à jour de l\'offre'], 500);
+        }
     }
+    
 
     // Supprimer une offre
     public function destroy($id)

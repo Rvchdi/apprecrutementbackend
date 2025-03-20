@@ -23,5 +23,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/offres', [OffreController::class, 'index']); // Liste des offres
     Route::post('/offres', [OffreController::class, 'store']); // Créer une offre
     Route::put('/offres/{id}', [OffreController::class, 'update']); // Modifier une offre
+    
     Route::delete('/offres/{id}', [OffreController::class, 'destroy']); // Supprimer une offre
 });
