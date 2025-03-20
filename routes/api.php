@@ -20,12 +20,14 @@ Route::prefix('auth')->group(function () {
 });
 
 Route::middleware('auth:sanctum')->group(function () {
+   //entreprise
     Route::get('/offres', [OffreController::class, 'index']); // Liste des offres
     Route::post('/offres', [OffreController::class, 'store']); // Créer une offre
     Route::put('/offres/{id}', [OffreController::class, 'update']); // Modifier une offre
-    
     Route::delete('/offres/{id}', [OffreController::class, 'destroy']); // Supprimer une offre
     Route::get('/offres/entreprise', [OffreController::class, 'offresDeLEntreprise']);//listes des offres creer par lentreprise 
+
+//etudiant
     Route::get('/offres/etudiant', [OffreController::class, 'offresPourEtudiant']);
 
 
