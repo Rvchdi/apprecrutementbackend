@@ -25,4 +25,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/offres/{id}', [OffreController::class, 'update']); // Modifier une offre
     
     Route::delete('/offres/{id}', [OffreController::class, 'destroy']); // Supprimer une offre
+    Route::get('/offres/entreprise', [OffreController::class, 'offresDeLEntreprise']);//listes des offres creer par lentreprise 
+
 });

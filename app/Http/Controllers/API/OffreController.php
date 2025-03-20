@@ -167,4 +167,23 @@ try {
 
         return response()->json(['message' => 'Offre supprimée avec succès'], 200);
     }
+
+    public function offresDeLEntreprise()
+{
+    // Récupérer l'entreprise de l'utilisateur authentifié
+    $user = auth()->user();
+    $entreprise = $user->entreprise;  // On suppose qu'il existe une relation entre l'utilisateur et l'entreprise
+
+    // Vérifier si l'entreprise existe
+    if (!$entreprise) {
+        return response()->json(['message' => 'Entreprise non trouvée pour l\'utilisateur authentifié'], 404);
+    }
+
+    // Récupérer les offres créées par cette entreprise
+    $offres = Offre::where('entreprise_id', $entreprise->id)->get();
+
+    // Retourner les offres de l'entreprise
+    return response()->json(['offres' => $offres], 200);
+}
+
 }
