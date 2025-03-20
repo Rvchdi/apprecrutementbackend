@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Conversation extends Model
+class Message extends Model
 {
     use HasFactory;
 
@@ -15,39 +15,34 @@ class Conversation extends Model
      * @var array<int, string>
      */
     protected $fillable = [
-        'offre_id',
+        'conversation_id',
+        'sender_id',
+        'contenu',
+        'lu'
     ];
 
     /**
-     * Obtenir les messages de la conversation.
+     * Les attributs à caster.
+     *
+     * @var array
      */
-    public function messages()
+    protected $casts = [
+        'lu' => 'boolean',
+    ];
+
+    /**
+     * Get the conversation that owns the message.
+     */
+    public function conversation()
     {
-        return $this->hasMany(Message::class);
+        return $this->belongsTo(Conversation::class);
     }
 
     /**
-     * Obtenir les participants de la conversation.
+     * Get the sender of the message.
      */
-    public function participants()
+    public function sender()
     {
-        return $this->belongsToMany(User::class, 'conversation_participants')
-                    ->withTimestamps();
-    }
-
-    /**
-     * Obtenir l'offre associée à la conversation.
-     */
-    public function offre()
-    {
-        return $this->belongsTo(Offre::class);
-    }
-
-    /**
-     * Obtenir le dernier message de la conversation.
-     */
-    public function dernier_message()
-    {
-        return $this->hasOne(Message::class)->latest();
+        return $this->belongsTo(User::class, 'sender_id');
     }
 }
