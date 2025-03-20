@@ -186,4 +186,26 @@ try {
     return response()->json(['offres' => $offres], 200);
 }
 
+ // Méthode pour afficher les offres pour les étudiants
+ public function offresPourEtudiant(Request $request)
+{
+    // Vérifie si l'utilisateur est authentifié et a le rôle 'etudiant'
+    if ($request->user()->role !== 'etudiant') {
+        return response()->json(['error' => 'Accès interdit. Vous devez être un étudiant pour voir ces offres.'], 403);
+    }
+
+    // Récupérer toutes les offres (ajuste selon ta logique de filtrage)
+    $offres = Offre::all();  // Récupère toutes les offres sans filtrage spécifique
+
+    // Vérifier s'il y a des offres disponibles
+    if ($offres->isEmpty()) {
+        return response()->json(['message' => 'Aucune offre trouvée pour les étudiants.'], 404);
+    }
+
+    // Retourner les offres
+    return response()->json($offres);
+}
+
+
+
 }
