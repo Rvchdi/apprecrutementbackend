@@ -485,7 +485,26 @@ class EtudiantController extends Controller
             'candidature' => $candidature
         ]);
     }
-    
+    public function getEtudiantCandidatures()
+    {
+        $user = Auth::user();
+        $etudiant = $user->etudiant;
+        
+        if (!$etudiant) {
+            return response()->json([
+                'message' => 'Profil étudiant non trouvé'
+            ], 404);
+        }
+        
+        $candidatures = $etudiant->candidatures()
+            ->with(['offre.entreprise', 'offre.competences'])
+            ->orderBy('date_candidature', 'desc')
+            ->get();
+        
+        return response()->json([
+            'candidatures' => $candidatures
+        ]);
+    }
     /**
      * Récupérer les offres recommandées
      *

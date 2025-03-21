@@ -15,6 +15,10 @@ return new class extends Migration
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->date('date_naissance')->nullable();
+            $table->string('adresse')->nullable();
+            $table->string('ville')->nullable();
+            $table->string('code_postal')->nullable();
+            $table->string('pays')->nullable();
             $table->string('niveau_etude')->nullable();
             $table->string('filiere')->nullable();
             $table->string('ecole')->nullable();

@@ -39,6 +39,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('etudiant/profile', [EtudiantController::class, 'updateProfile']);
     Route::post('etudiant/profile/cv', [EtudiantController::class, 'uploadCV']);
     Route::get('etudiant/dashboard/summary', [EtudiantController::class, 'getSummary']);
+    Route::get('candidatures/etudiant', [EtudiantController::class, 'getEtudiantCandidatures']);
+   
     
     // Offres
     Route::post('offres', [OffreController::class, 'store']);
