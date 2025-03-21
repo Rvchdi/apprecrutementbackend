@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 
-class EtudiantDashboardController extends Controller
+class EtudiantController extends Controller
 {
     /**
      * Vérifier que l'utilisateur connecté est bien un étudiant

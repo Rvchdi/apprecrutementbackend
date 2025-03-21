@@ -44,7 +44,11 @@ class Conversation extends Model
     {
         return $this->hasMany(Message::class);
     }
-
+    public function participants()
+    {
+        return $this->belongsToMany(User::class, 'conversation_participants')
+                    ->withTimestamps();
+    }
     /**
      * Get the related candidature if exists.
      */
@@ -56,6 +60,13 @@ class Conversation extends Model
         return null;
     }
 
+    /**
+     * Obtenir le dernier message de la conversation.
+     */
+    public function dernier_message()
+    {
+        return $this->hasOne(Message::class)->latest();
+    }
     /**
      * Get the related offre if exists.
      */

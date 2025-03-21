@@ -24,29 +24,18 @@ class MessageController extends Controller
     {
         $user = Auth::user();
         
-        // Récupérer les IDs des conversations de l'utilisateur
-        $conversationIds = Conversation::where('user1_id', $user->id)
-            ->orWhere('user2_id', $user->id)
-            ->pluck('id');
-        
-        // Récupérer les derniers messages de chaque conversation
-        $lastMessages = Message::whereIn('conversation_id', $conversationIds)
-            ->select('conversation_id', DB::raw('MAX(created_at) as last_message_date'))
-            ->groupBy('conversation_id');
-        
-        // Récupérer les conversations avec leurs derniers messages
-        $conversations = Conversation::whereIn('id', $conversationIds)
-            ->with(['user1', 'user2'])
-            ->leftJoinSub($lastMessages, 'last_messages', function($join) {
-                $join->on('conversations.id', '=', 'last_messages.conversation_id');
-            })
-            ->orderBy('last_message_date', 'desc')
-            ->get();
+        // Récupérer les conversations où l'utilisateur est participant
+        $conversations = Conversation::whereHas('participants', function($query) use ($user) {
+            $query->where('users.id', $user->id);
+        })->get();
         
         $result = [];
         
         foreach ($conversations as $conversation) {
-            $otherUser = $conversation->user1_id == $user->id ? $conversation->user2 : $conversation->user1;
+            // Trouver l'autre participant de la conversation
+            $otherUser = $conversation->participants
+                ->where('id', '!=', $user->id)
+                ->first();
             
             // Récupérer le dernier message de la conversation
             $lastMessage = Message::where('conversation_id', $conversation->id)
@@ -55,26 +44,26 @@ class MessageController extends Controller
             
             // Compter les messages non lus
             $unreadCount = Message::where('conversation_id', $conversation->id)
-                ->where('user_id', '!=', $user->id)
+                ->where('sender_id', '!=', $user->id)
                 ->where('lu', false)
                 ->count();
             
             $result[] = [
                 'id' => $conversation->id,
-                'user' => [
+                'user' => $otherUser ? [
                     'id' => $otherUser->id,
                     'nom' => $otherUser->nom,
                     'prenom' => $otherUser->prenom,
                     'role' => $otherUser->role,
                     'photo' => $otherUser->photo
-                ],
+                ] : null,
                 'last_message' => $lastMessage ? [
                     'contenu' => $lastMessage->contenu,
                     'date' => $lastMessage->created_at,
-                    'is_sent' => $lastMessage->user_id == $user->id
+                    'is_sent' => $lastMessage->sender_id == $user->id
                 ] : null,
                 'unread_count' => $unreadCount,
-                'related_to' => $conversation->related_type . ($conversation->related_id ? ':'.$conversation->related_id : '')
+                'offre_id' => $conversation->offre_id
             ];
         }
         
@@ -93,13 +82,10 @@ class MessageController extends Controller
     {
         $user = Auth::user();
         
-        // Vérifier si la conversation existe et appartient à l'utilisateur
-        $conversation = Conversation::where('id', $id)
-            ->where(function($query) use ($user) {
-                $query->where('user1_id', $user->id)
-                      ->orWhere('user2_id', $user->id);
-            })
-            ->first();
+        // Vérifier si la conversation existe et si l'utilisateur en est participant
+        $conversation = Conversation::whereHas('participants', function($query) use ($user) {
+            $query->where('users.id', $user->id);
+        })->find($id);
             
         if (!$conversation) {
             return response()->json([
@@ -109,13 +95,13 @@ class MessageController extends Controller
         
         // Récupérer les messages
         $messages = Message::where('conversation_id', $id)
-            ->with('user')
+            ->with('sender')
             ->orderBy('created_at', 'asc')
             ->get();
         
         // Marquer les messages comme lus
         Message::where('conversation_id', $id)
-            ->where('user_id', '!=', $user->id)
+            ->where('sender_id', '!=', $user->id)
             ->where('lu', false)
             ->update(['lu' => true]);
         
@@ -135,13 +121,10 @@ class MessageController extends Controller
     {
         $user = Auth::user();
         
-        // Vérifier si la conversation existe et appartient à l'utilisateur
-        $conversation = Conversation::where('id', $id)
-            ->where(function($query) use ($user) {
-                $query->where('user1_id', $user->id)
-                      ->orWhere('user2_id', $user->id);
-            })
-            ->first();
+        // Vérifier si la conversation existe et si l'utilisateur en est participant
+        $conversation = Conversation::whereHas('participants', function($query) use ($user) {
+            $query->where('users.id', $user->id);
+        })->find($id);
             
         if (!$conversation) {
             return response()->json([
@@ -164,22 +147,24 @@ class MessageController extends Controller
         // Créer le message
         $message = new Message();
         $message->conversation_id = $id;
-        $message->user_id = $user->id;
+        $message->sender_id = $user->id;
         $message->contenu = $request->contenu;
         $message->lu = false;
         $message->save();
         
-        // Récupérer le destinataire
-        $destinataireId = $conversation->user1_id == $user->id ? $conversation->user2_id : $conversation->user1_id;
+        // Récupérer les autres participants pour les notifier
+        $otherParticipants = $conversation->participants->where('id', '!=', $user->id);
         
-        // Créer une notification pour le destinataire
-        Notification::create([
-            'user_id' => $destinataireId,
-            'titre' => 'Nouveau message',
-            'contenu' => 'Vous avez reçu un nouveau message',
-            'type' => 'message',
-            'lu' => false
-        ]);
+        // Créer une notification pour chaque destinataire
+        foreach ($otherParticipants as $participant) {
+            Notification::create([
+                'user_id' => $participant->id,
+                'titre' => 'Nouveau message',
+                'contenu' => 'Vous avez reçu un nouveau message',
+                'type' => 'message',
+                'lu' => false
+            ]);
+        }
         
         return response()->json([
             'message' => 'Message envoyé avec succès',
@@ -199,10 +184,9 @@ class MessageController extends Controller
         
         // Validation des données
         $validator = Validator::make($request->all(), [
-            'destinataire_id' => 'required|integer|exists:users,id',
+            'participant_id' => 'required|integer|exists:users,id',
             'message_initial' => 'required|string|max:5000',
-            'related_type' => 'nullable|string|in:candidature,offre',
-            'related_id' => 'nullable|integer'
+            'offre_id' => 'nullable|integer|exists:offres,id'
         ]);
         
         if ($validator->fails()) {
@@ -213,29 +197,25 @@ class MessageController extends Controller
         }
         
         // Vérifier que le destinataire n'est pas l'utilisateur lui-même
-        if ($user->id == $request->destinataire_id) {
+        if ($user->id == $request->participant_id) {
             return response()->json([
                 'message' => 'Vous ne pouvez pas créer une conversation avec vous-même'
             ], 400);
         }
         
         // Vérifier si une conversation existe déjà entre ces deux utilisateurs
-        $existingConversation = Conversation::where(function($query) use ($user, $request) {
-            $query->where('user1_id', $user->id)
-                  ->where('user2_id', $request->destinataire_id);
-        })
-        ->orWhere(function($query) use ($user, $request) {
-            $query->where('user1_id', $request->destinataire_id)
-                  ->where('user2_id', $user->id);
-        })
-        ->first();
+        $existingConversation = Conversation::whereHas('participants', function($query) use ($user) {
+            $query->where('users.id', $user->id);
+        })->whereHas('participants', function($query) use ($request) {
+            $query->where('users.id', $request->participant_id);
+        })->first();
         
         // Si la conversation existe, renvoyer son ID
         if ($existingConversation) {
             // Ajouter un nouveau message à la conversation existante
             $message = new Message();
             $message->conversation_id = $existingConversation->id;
-            $message->user_id = $user->id;
+            $message->sender_id = $user->id;
             $message->contenu = $request->message_initial;
             $message->lu = false;
             $message->save();
@@ -248,28 +228,28 @@ class MessageController extends Controller
         
         // Créer la nouvelle conversation
         $conversation = new Conversation();
-        $conversation->user1_id = $user->id;
-        $conversation->user2_id = $request->destinataire_id;
         
-        // Ajouter des informations sur la relation (candidature ou offre)
-        if ($request->has('related_type') && $request->has('related_id')) {
-            $conversation->related_type = $request->related_type;
-            $conversation->related_id = $request->related_id;
+        // Ajouter l'offre si spécifiée
+        if ($request->has('offre_id')) {
+            $conversation->offre_id = $request->offre_id;
         }
         
         $conversation->save();
         
+        // Attacher les participants
+        $conversation->participants()->attach([$user->id, $request->participant_id]);
+        
         // Créer le premier message
         $message = new Message();
         $message->conversation_id = $conversation->id;
-        $message->user_id = $user->id;
+        $message->sender_id = $user->id;
         $message->contenu = $request->message_initial;
         $message->lu = false;
         $message->save();
         
         // Créer une notification pour le destinataire
         Notification::create([
-            'user_id' => $request->destinataire_id,
+            'user_id' => $request->participant_id,
             'titre' => 'Nouvelle conversation',
             'contenu' => 'Vous avez reçu un nouveau message',
             'type' => 'message',
@@ -292,13 +272,10 @@ class MessageController extends Controller
     {
         $user = Auth::user();
         
-        // Vérifier si la conversation existe et appartient à l'utilisateur
-        $conversation = Conversation::where('id', $id)
-            ->where(function($query) use ($user) {
-                $query->where('user1_id', $user->id)
-                      ->orWhere('user2_id', $user->id);
-            })
-            ->first();
+        // Vérifier si la conversation existe et si l'utilisateur en est participant
+        $conversation = Conversation::whereHas('participants', function($query) use ($user) {
+            $query->where('users.id', $user->id);
+        })->find($id);
             
         if (!$conversation) {
             return response()->json([
@@ -308,7 +285,7 @@ class MessageController extends Controller
         
         // Marquer tous les messages non-lus et non-envoyés par l'utilisateur comme lus
         $updatedCount = Message::where('conversation_id', $id)
-            ->where('user_id', '!=', $user->id)
+            ->where('sender_id', '!=', $user->id)
             ->where('lu', false)
             ->update(['lu' => true]);
             
@@ -327,13 +304,13 @@ class MessageController extends Controller
         $user = Auth::user();
         
         // Récupérer les IDs des conversations de l'utilisateur
-        $conversationIds = Conversation::where('user1_id', $user->id)
-            ->orWhere('user2_id', $user->id)
-            ->pluck('id');
+        $conversationIds = Conversation::whereHas('participants', function($query) use ($user) {
+            $query->where('users.id', $user->id);
+        })->pluck('id');
         
         // Compter les messages non lus
         $count = Message::whereIn('conversation_id', $conversationIds)
-            ->where('user_id', '!=', $user->id)
+            ->where('sender_id', '!=', $user->id)
             ->where('lu', false)
             ->count();
             
@@ -385,33 +362,23 @@ class MessageController extends Controller
         }
         
         // Déterminer l'émetteur et le destinataire
-        if ($isEntreprise) {
-            $emetteurId = $user->id;
-            $destinataireId = $candidature->etudiant->user_id;
-        } else {
-            $emetteurId = $user->id;
-            $destinataireId = $candidature->offre->entreprise->user_id;
-        }
+        $emetteurId = $user->id;
+        $destinataireId = $isEntreprise ? $candidature->etudiant->user_id : $candidature->offre->entreprise->user_id;
         
-        // Vérifier si une conversation existe déjà
-        $existingConversation = Conversation::where(function($query) use ($emetteurId, $destinataireId) {
-            $query->where('user1_id', $emetteurId)
-                  ->where('user2_id', $destinataireId);
-        })
-        ->orWhere(function($query) use ($emetteurId, $destinataireId) {
-            $query->where('user1_id', $destinataireId)
-                  ->where('user2_id', $emetteurId);
-        })
-        ->where('related_type', 'candidature')
-        ->where('related_id', $candidatureId)
-        ->first();
+        // Vérifier si une conversation existe déjà entre ces participants pour cette candidature
+        $existingConversation = Conversation::whereHas('participants', function($query) use ($emetteurId) {
+            $query->where('users.id', $emetteurId);
+        })->whereHas('participants', function($query) use ($destinataireId) {
+            $query->where('users.id', $destinataireId);
+        })->where('offre_id', $candidature->offre_id)
+          ->first();
         
         // Si la conversation existe, renvoyer son ID
         if ($existingConversation) {
             // Ajouter un nouveau message à la conversation existante
             $message = new Message();
             $message->conversation_id = $existingConversation->id;
-            $message->user_id = $user->id;
+            $message->sender_id = $user->id;
             $message->contenu = $request->message_initial;
             $message->lu = false;
             $message->save();
@@ -424,16 +391,16 @@ class MessageController extends Controller
         
         // Créer la nouvelle conversation
         $conversation = new Conversation();
-        $conversation->user1_id = $emetteurId;
-        $conversation->user2_id = $destinataireId;
-        $conversation->related_type = 'candidature';
-        $conversation->related_id = $candidatureId;
+        $conversation->offre_id = $candidature->offre_id;
         $conversation->save();
+        
+        // Attacher les participants
+        $conversation->participants()->attach([$emetteurId, $destinataireId]);
         
         // Créer le premier message
         $message = new Message();
         $message->conversation_id = $conversation->id;
-        $message->user_id = $user->id;
+        $message->sender_id = $user->id;
         $message->contenu = $request->message_initial;
         $message->lu = false;
         $message->save();
