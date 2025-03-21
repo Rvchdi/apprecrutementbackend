@@ -604,4 +604,44 @@ class EtudiantController extends Controller
             'message' => 'Notification marquée comme lue'
         ]);
     }
+    public function getTests()
+    {
+        $user = Auth::user();
+        $etudiant = $user->etudiant;
+        
+        if (!$etudiant) {
+            return response()->json([
+                'message' => 'Profil étudiant non trouvé'
+            ], 404);
+        }
+        
+        // Récupérer les candidatures où un test est requis mais pas complété
+        $candidaturesAvecTests = Candidature::with(['offre.test', 'offre.entreprise'])
+            ->where('etudiant_id', $etudiant->id)
+            ->whereHas('offre', function($query) {
+                $query->where('test_requis', true);
+            })
+            ->where('test_complete', false)
+            ->where('statut', '!=', 'refusee')
+            ->get();
+        
+        $tests = $candidaturesAvecTests->map(function($candidature) {
+            $test = $candidature->offre->test;
+            return [
+                'id' => $test->id,
+                'titre' => $test->titre,
+                'description' => $test->description,
+                'duree_minutes' => $test->duree_minutes,
+                'offre_id' => $candidature->offre->id,
+                'offre_titre' => $candidature->offre->titre,
+                'entreprise' => $candidature->offre->entreprise->nom_entreprise,
+                'candidature_id' => $candidature->id,
+                'date_candidature' => $candidature->date_candidature
+            ];
+        });
+        
+        return response()->json([
+            'tests' => $tests
+        ]);
+    }
 }

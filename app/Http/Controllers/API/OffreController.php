@@ -18,50 +18,68 @@ class OffreController extends Controller
      * @return \Illuminate\Http\JsonResponse
      */
     public function index(Request $request)
-    {
-        $query = Offre::with(['entreprise', 'competences'])
-            ->where('statut', 'active');
+{
+    // Validation des paramètres de requête
+    $validator = Validator::make($request->all(), [
+        'type' => 'nullable|in:stage,emploi,alternance',
+        'localisation' => 'nullable|string|max:255',
+        'niveau_requis' => 'nullable|string|max:255',
+        'remuneration_min' => 'nullable|numeric|min:0',
+        'entreprise_id' => 'nullable|exists:entreprises,id',
+        'competence_id' => 'nullable|exists:competences,id',
+        'search' => 'nullable|string|max:255',
+        'sort_by' => 'nullable|in:created_at,titre,remuneration,date_debut',
+        'sort_direction' => 'nullable|in:asc,desc',
+        'per_page' => 'nullable|integer|between:5,100'
+    ]);
+
+    if ($validator->fails()) {
+        return response()->json([
+            'message' => 'Paramètres de recherche invalides',
+            'errors' => $validator->errors()
+        ], 422);
+    }
+
+    try {
+        // Construction de la requête de base
+        $query = Offre::with([
+            'entreprise', 
+            'competences', 
+            'entreprise.user'
+        ])
+        ->where('statut', 'active');
         
-        // Filtrer par type d'offre
-        if ($request->has('type') && in_array($request->type, ['stage', 'emploi', 'alternance'])) {
-            $query->where('type', $request->type);
+        // Filtres dynamiques
+        $filters = [
+            'type' => fn($query, $value) => $query->where('type', $value),
+            'localisation' => fn($query, $value) => $query->where('localisation', 'like', "%{$value}%"),
+            'niveau_requis' => fn($query, $value) => $query->where('niveau_requis', 'like', "%{$value}%"),
+            'remuneration_min' => fn($query, $value) => $query->where('remuneration', '>=', $value),
+            'entreprise_id' => fn($query, $value) => $query->where('entreprise_id', $value),
+        ];
+
+        // Application des filtres
+        foreach ($filters as $key => $filterCallback) {
+            if ($request->has($key)) {
+                $query = $filterCallback($query, $request->input($key));
+            }
         }
-        
-        // Filtrer par localisation
-        if ($request->has('localisation')) {
-            $query->where('localisation', 'like', '%' . $request->localisation . '%');
-        }
-        
-        // Filtrer par niveau requis
-        if ($request->has('niveau_requis')) {
-            $query->where('niveau_requis', 'like', '%' . $request->niveau_requis . '%');
-        }
-        
-        // Filtrer par rémunération minimale
-        if ($request->has('remuneration_min') && is_numeric($request->remuneration_min)) {
-            $query->where('remuneration', '>=', $request->remuneration_min);
-        }
-        
-        // Filtrer par entreprise
-        if ($request->has('entreprise_id')) {
-            $query->where('entreprise_id', $request->entreprise_id);
-        }
-        
-        // Filtrer par compétence
+
+        // Filtre par compétence
         if ($request->has('competence_id')) {
             $query->whereHas('competences', function ($q) use ($request) {
                 $q->where('competence_id', $request->competence_id);
             });
         }
         
-        // Filtrer par recherche textuelle
+        // Recherche textuelle
         if ($request->has('search')) {
             $searchTerm = $request->search;
             $query->where(function ($q) use ($searchTerm) {
-                $q->where('titre', 'like', '%' . $searchTerm . '%')
-                  ->orWhere('description', 'like', '%' . $searchTerm . '%')
+                $q->where('titre', 'like', "%{$searchTerm}%")
+                  ->orWhere('description', 'like', "%{$searchTerm}%")
                   ->orWhereHas('entreprise', function ($q2) use ($searchTerm) {
-                      $q2->where('nom_entreprise', 'like', '%' . $searchTerm . '%');
+                      $q2->where('nom_entreprise', 'like', "%{$searchTerm}%");
                   });
             });
         }
@@ -70,16 +88,63 @@ class OffreController extends Controller
         $sortBy = $request->input('sort_by', 'created_at');
         $sortDirection = $request->input('sort_direction', 'desc');
         
-        if (in_array($sortBy, ['created_at', 'titre', 'remuneration', 'date_debut'])) {
-            $query->orderBy($sortBy, $sortDirection);
-        }
+        $query->orderBy($sortBy, $sortDirection);
         
         // Pagination
         $perPage = $request->input('per_page', 10);
         $offres = $query->paginate($perPage);
-        
-        return response()->json($offres);
+
+        // Transformation des données (optionnel)
+        $offres->getCollection()->transform(function($offre) {
+            return [
+                'id' => $offre->id,
+                'titre' => $offre->titre,
+                'description' => Str::limit($offre->description, 150),
+                'type' => $offre->type,
+                'localisation' => $offre->localisation,
+                'remuneration' => $offre->remuneration,
+                'date_debut' => $offre->date_debut,
+                'entreprise' => [
+                    'id' => $offre->entreprise->id,
+                    'nom' => $offre->entreprise->nom_entreprise,
+                    'logo' => $offre->entreprise->logo
+                ],
+                'competences' => $offre->competences->pluck('nom'),
+                'test_requis' => $offre->test_requis
+            ];
+        });
+
+        // Logging
+        \Log::info('Offres récupérées', [
+            'total' => $offres->total(),
+            'page' => $offres->currentPage(),
+            'per_page' => $offres->perPage()
+        ]);
+
+        // Réponse structurée
+        return response()->json([
+            'offres' => $offres,
+            'message' => 'Offres récupérées avec succès',
+            'meta' => [
+                'total' => $offres->total(),
+                'per_page' => $offres->perPage(),
+                'current_page' => $offres->currentPage(),
+                'last_page' => $offres->lastPage()
+            ]
+        ]);
+    } catch (\Exception $e) {
+        // Gestion des erreurs
+        \Log::error('Erreur lors de la récupération des offres', [
+            'message' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+
+        return response()->json([
+            'message' => 'Une erreur est survenue lors de la récupération des offres',
+            'error' => $e->getMessage()
+        ], 500);
     }
+}
     
     /**
      * Afficher les détails d'une offre spécifique
