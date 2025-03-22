@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Test extends Model
+class Reponse extends Model
 {
     use HasFactory;
 
@@ -15,10 +15,9 @@ class Test extends Model
      * @var array<int, string>
      */
     protected $fillable = [
-        'offre_id',
-        'titre',
-        'description',
-        'duree_minutes',
+        'question_id',
+        'contenu',
+        'est_correcte',
     ];
 
     /**
@@ -27,22 +26,22 @@ class Test extends Model
      * @var array<string, string>
      */
     protected $casts = [
-        'duree_minutes' => 'integer',
+        'est_correcte' => 'boolean',
     ];
 
     /**
-     * Get the offre that owns the test.
+     * Get the question that owns the reponse.
      */
-    public function offre()
+    public function question()
     {
-        return $this->belongsTo(Offre::class);
+        return $this->belongsTo(Question::class);
     }
 
     /**
-     * Get the questions for the test.
+     * Get the reponses_etudiants for the reponse.
      */
-    public function questions()
+    public function reponsesEtudiants()
     {
-        return $this->hasMany(Question::class);
+        return $this->hasMany(ReponseEtudiant::class);
     }
 }
