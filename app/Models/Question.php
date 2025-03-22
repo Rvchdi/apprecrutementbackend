@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Question extends Model
 {
@@ -22,7 +24,7 @@ class Question extends Model
     /**
      * Get the test that owns the question.
      */
-    public function test()
+    public function test(): BelongsTo
     {
         return $this->belongsTo(Test::class);
     }
@@ -30,7 +32,7 @@ class Question extends Model
     /**
      * Get the reponses for the question.
      */
-    public function reponses()
+    public function reponses(): HasMany
     {
         return $this->hasMany(Reponse::class);
     }
@@ -38,7 +40,7 @@ class Question extends Model
     /**
      * Get the reponses_etudiants for the question.
      */
-    public function reponsesEtudiants()
+    public function reponsesEtudiants(): HasMany
     {
         return $this->hasMany(ReponseEtudiant::class);
     }

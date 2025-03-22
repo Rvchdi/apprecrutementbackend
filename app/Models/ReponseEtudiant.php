@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ReponseEtudiant extends Model
 {
@@ -30,7 +31,7 @@ class ReponseEtudiant extends Model
     /**
      * Get the candidature that owns the reponse_etudiant.
      */
-    public function candidature()
+    public function candidature(): BelongsTo
     {
         return $this->belongsTo(Candidature::class);
     }
@@ -38,7 +39,7 @@ class ReponseEtudiant extends Model
     /**
      * Get the question that owns the reponse_etudiant.
      */
-    public function question()
+    public function question(): BelongsTo
     {
         return $this->belongsTo(Question::class);
     }
@@ -46,7 +47,7 @@ class ReponseEtudiant extends Model
     /**
      * Get the reponse that owns the reponse_etudiant.
      */
-    public function reponse()
+    public function reponse(): BelongsTo
     {
         return $this->belongsTo(Reponse::class);
     }

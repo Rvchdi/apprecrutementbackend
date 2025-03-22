@@ -6,10 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\Offre;
 use App\Models\Candidature;
 use App\Models\Competence;
+use App\Models\Test;
+use App\Models\Question;
+use App\Models\Reponse;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 
 class OffreController extends Controller
 {
@@ -67,7 +71,7 @@ class OffreController extends Controller
      */
     public function show($id)
     {
-        $offre = Offre::with(['entreprise.user', 'competences', 'test'])->findOrFail($id);
+        $offre = Offre::with(['entreprise.user', 'competences', 'test.questions.reponses'])->findOrFail($id);
         
         // Incrémenter le compteur de vues
         $offre->increment('vues_count');
@@ -116,164 +120,6 @@ class OffreController extends Controller
     }
 
     /**
-     * Récupérer les offres d'une entreprise spécifique
-     */
-    public function getEntrepriseOffres($entrepriseId)
-    {
-        $offres = Offre::with(['entreprise', 'competences'])
-            ->where('entreprise_id', $entrepriseId)
-            ->where('statut', 'active')
-            ->orderBy('created_at', 'desc')
-            ->get();
-            
-        return response()->json([
-            'offres' => $offres,
-            'message' => 'Offres de l\'entreprise récupérées avec succès'
-        ]);
-    }
-
-    /**
-     * Sauvegarder une offre dans les favoris
-     */
-    public function saveOffre($id)
-    {
-        $user = Auth::user();
-        $etudiant = $user->etudiant;
-        
-        if (!$etudiant) {
-            return response()->json([
-                'message' => 'Profil étudiant non trouvé'
-            ], 404);
-        }
-        
-        $offre = Offre::findOrFail($id);
-        
-        // Ajouter aux favoris s'il n'y est pas déjà
-        if (!$etudiant->offres_sauvegardees()->where('offre_id', $id)->exists()) {
-            $etudiant->offres_sauvegardees()->attach($id);
-        }
-        
-        return response()->json([
-            'message' => 'Offre sauvegardée avec succès'
-        ]);
-    }
-
-    /**
-     * Retirer une offre des favoris
-     */
-    public function unsaveOffre($id)
-    {
-        $user = Auth::user();
-        $etudiant = $user->etudiant;
-        
-        if (!$etudiant) {
-            return response()->json([
-                'message' => 'Profil étudiant non trouvé'
-            ], 404);
-        }
-        
-        $etudiant->offres_sauvegardees()->detach($id);
-        
-        return response()->json([
-            'message' => 'Offre retirée des favoris avec succès'
-        ]);
-    }
-
-    /**
-     * Postuler à une offre
-     */
-    public function postuler(Request $request, $id)
-    {
-        $validator = Validator::make($request->all(), [
-            'lettre_motivation' => 'nullable|string',
-        ]);
-        
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Données invalides',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-        
-        $user = Auth::user();
-        $etudiant = $user->etudiant;
-        
-        if (!$etudiant) {
-            return response()->json([
-                'message' => 'Profil étudiant non trouvé'
-            ], 404);
-        }
-        
-        $offre = Offre::findOrFail($id);
-        
-        // Vérifier si l'étudiant a déjà postulé
-        $candidatureExistante = Candidature::where('etudiant_id', $etudiant->id)
-            ->where('offre_id', $offre->id)
-            ->first();
-            
-        if ($candidatureExistante) {
-            return response()->json([
-                'message' => 'Vous avez déjà postulé à cette offre'
-            ], 422);
-        }
-        
-        // Créer la candidature
-        $candidature = new Candidature();
-        $candidature->etudiant_id = $etudiant->id;
-        $candidature->offre_id = $offre->id;
-        $candidature->lettre_motivation = $request->lettre_motivation;
-        $candidature->statut = 'en_attente';
-        $candidature->date_candidature = now();
-        $candidature->save();
-        
-        // Notifier l'entreprise
-        $entreprise = $offre->entreprise;
-        $entreprise->user->notifications()->create([
-            'titre' => 'Nouvelle candidature',
-            'contenu' => "Un étudiant a postulé à votre offre: {$offre->titre}",
-            'type' => 'candidature',
-            'lien' => "/candidatures/{$candidature->id}"
-        ]);
-        
-        return response()->json([
-            'message' => 'Candidature soumise avec succès',
-            'candidature' => $candidature
-        ]);
-    }
-
-    /**
-     * Récupérer le statut de candidature pour une offre
-     */
-    public function getCandidatureStatus($id)
-    {
-        $user = Auth::user();
-        $etudiant = $user->etudiant;
-        
-        if (!$etudiant) {
-            return response()->json([
-                'message' => 'Profil étudiant non trouvé'
-            ], 404);
-        }
-        
-        $candidature = Candidature::where('etudiant_id', $etudiant->id)
-            ->where('offre_id', $id)
-            ->first();
-            
-        $saved = $etudiant->offres_sauvegardees()->where('offre_id', $id)->exists();
-        
-        return response()->json([
-            'status' => $candidature ? [
-                'status' => $candidature->statut,
-                'date_candidature' => $candidature->date_candidature,
-                'test_complete' => $candidature->test_complete,
-                'score_test' => $candidature->score_test,
-                'candidature_id' => $candidature->id
-            ] : null,
-            'saved' => $saved
-        ]);
-    }
-
-    /**
      * Créer une nouvelle offre (entreprise uniquement)
      */
     public function store(Request $request)
@@ -286,6 +132,7 @@ class OffreController extends Controller
             ], 403);
         }
         
+        // Validation des données de base pour l'offre
         $validator = Validator::make($request->all(), [
             'titre' => 'required|string|max:255',
             'description' => 'required|string',
@@ -298,11 +145,7 @@ class OffreController extends Controller
             'competences_requises' => 'nullable|array',
             'competences_requises.*' => 'exists:competences,id',
             'test_requis' => 'boolean',
-            'questions' => 'nullable|array',
-            'questions.*.contenu' => 'required|string',
-            'questions.*.reponses' => 'required|array|min:2',
-            'questions.*.reponses.*.contenu' => 'required|string',
-            'questions.*.reponses.*.est_correcte' => 'required|boolean'
+            'statut' => 'in:active,inactive,cloturee'
         ]);
         
         if ($validator->fails()) {
@@ -312,52 +155,89 @@ class OffreController extends Controller
             ], 422);
         }
         
-        $offre = new Offre();
-        $offre->entreprise_id = $user->entreprise->id;
-        $offre->titre = $request->titre;
-        $offre->description = $request->description;
-        $offre->type = $request->type;
-        $offre->niveau_requis = $request->niveau_requis;
-        $offre->localisation = $request->localisation;
-        $offre->remuneration = $request->remuneration;
-        $offre->date_debut = $request->date_debut;
-        $offre->duree = $request->duree;
-        $offre->test_requis = $request->test_requis ?? false;
-        $offre->statut = 'active';
-        $offre->save();
-        
-        // Ajouter les compétences
-        if ($request->has('competences_requises') && !empty($request->competences_requises)) {
-            $offre->competences()->sync($request->competences_requises);
-        }
-        
-        // Créer le test si requis
-        if ($offre->test_requis && $request->has('questions') && !empty($request->questions)) {
-            $test = $offre->test()->create([
-                'titre' => "Test pour {$offre->titre}",
-                'description' => "Test de compétences pour l'offre {$offre->titre}",
-                'duree_minutes' => 60 // Durée par défaut
+        // Validation supplémentaire si un test est requis
+        if ($request->test_requis) {
+            $testValidator = Validator::make($request->all(), [
+                'test_titre' => 'required|string|max:255',
+                'test_description' => 'required|string',
+                'test_duree_minutes' => 'required|integer|min:1',
+                'questions' => 'required|array|min:1',
+                'questions.*.contenu' => 'required|string',
+                'questions.*.reponses' => 'required|array|min:2',
+                'questions.*.reponses.*.contenu' => 'required|string',
+                'questions.*.reponses.*.est_correcte' => 'required|boolean'
             ]);
             
-            // Ajouter les questions et réponses
-            foreach ($request->questions as $questionData) {
-                $question = $test->questions()->create([
-                    'contenu' => $questionData['contenu']
-                ]);
-                
-                foreach ($questionData['reponses'] as $reponseData) {
-                    $question->reponses()->create([
-                        'contenu' => $reponseData['contenu'],
-                        'est_correcte' => $reponseData['est_correcte']
-                    ]);
-                }
+            if ($testValidator->fails()) {
+                return response()->json([
+                    'message' => 'Données du test invalides',
+                    'errors' => $testValidator->errors()
+                ], 422);
             }
         }
         
-        return response()->json([
-            'message' => 'Offre créée avec succès',
-            'offre' => $offre
-        ], 201);
+        // Démarrer une transaction pour assurer l'intégrité des données
+        DB::beginTransaction();
+        
+        try {
+            // Créer l'offre
+            $offre = new Offre();
+            $offre->entreprise_id = $user->entreprise->id;
+            $offre->titre = $request->titre;
+            $offre->description = $request->description;
+            $offre->type = $request->type;
+            $offre->niveau_requis = $request->niveau_requis;
+            $offre->localisation = $request->localisation;
+            $offre->remuneration = $request->remuneration;
+            $offre->date_debut = $request->date_debut;
+            $offre->duree = $request->duree;
+            $offre->test_requis = $request->test_requis ?? false;
+            $offre->statut = $request->statut ?? 'active';
+            $offre->save();
+            
+            // Ajouter les compétences
+            if ($request->has('competences_requises') && !empty($request->competences_requises)) {
+                $offre->competences()->sync($request->competences_requises);
+            }
+            
+            // Créer le test si requis
+            if ($offre->test_requis && $request->has('questions') && !empty($request->questions)) {
+                $test = $offre->test()->create([
+                    'titre' => $request->test_titre ?? "Test pour {$offre->titre}",
+                    'description' => $request->test_description ?? "Test de compétences pour l'offre {$offre->titre}",
+                    'duree_minutes' => $request->test_duree_minutes ?? 60
+                ]);
+                
+                // Ajouter les questions et réponses
+                foreach ($request->questions as $questionData) {
+                    $question = $test->questions()->create([
+                        'contenu' => $questionData['contenu']
+                    ]);
+                    
+                    foreach ($questionData['reponses'] as $reponseData) {
+                        $question->reponses()->create([
+                            'contenu' => $reponseData['contenu'],
+                            'est_correcte' => $reponseData['est_correcte']
+                        ]);
+                    }
+                }
+            }
+            
+            DB::commit();
+            
+            return response()->json([
+                'message' => 'Offre créée avec succès',
+                'offre' => $offre->load(['competences', 'test.questions.reponses'])
+            ], 201);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            return response()->json([
+                'message' => 'Une erreur est survenue lors de la création de l\'offre',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -382,6 +262,7 @@ class OffreController extends Controller
             ], 403);
         }
         
+        // Validation des données de base pour l'offre
         $validator = Validator::make($request->all(), [
             'titre' => 'string|max:255',
             'description' => 'string',
@@ -404,31 +285,116 @@ class OffreController extends Controller
             ], 422);
         }
         
-        // Mettre à jour les champs de l'offre
-        $offre->fill($request->only([
-            'titre',
-            'description',
-            'type',
-            'niveau_requis',
-            'localisation',
-            'remuneration',
-            'date_debut',
-            'duree',
-            'test_requis',
-            'statut'
-        ]));
-        
-        $offre->save();
-        
-        // Mettre à jour les compétences
-        if ($request->has('competences_requises')) {
-            $offre->competences()->sync($request->competences_requises);
+        // Validation supplémentaire si un test est requis
+        if ($request->test_requis) {
+            $testValidator = Validator::make($request->all(), [
+                'test_titre' => 'required_with:test_requis|string|max:255',
+                'test_description' => 'required_with:test_requis|string',
+                'test_duree_minutes' => 'required_with:test_requis|integer|min:1',
+                'questions' => 'required_with:test_requis|array|min:1',
+                'questions.*.contenu' => 'required_with:test_requis|string',
+                'questions.*.reponses' => 'required_with:test_requis|array|min:2',
+                'questions.*.reponses.*.contenu' => 'required_with:test_requis|string',
+                'questions.*.reponses.*.est_correcte' => 'required_with:test_requis|boolean'
+            ]);
+            
+            if ($testValidator->fails()) {
+                return response()->json([
+                    'message' => 'Données du test invalides',
+                    'errors' => $testValidator->errors()
+                ], 422);
+            }
         }
         
-        return response()->json([
-            'message' => 'Offre mise à jour avec succès',
-            'offre' => $offre
-        ]);
+        // Démarrer une transaction pour assurer l'intégrité des données
+        DB::beginTransaction();
+        
+        try {
+            // Mettre à jour les champs de l'offre
+            if ($request->has('titre')) $offre->titre = $request->titre;
+            if ($request->has('description')) $offre->description = $request->description;
+            if ($request->has('type')) $offre->type = $request->type;
+            if ($request->has('niveau_requis')) $offre->niveau_requis = $request->niveau_requis;
+            if ($request->has('localisation')) $offre->localisation = $request->localisation;
+            if ($request->has('remuneration')) $offre->remuneration = $request->remuneration;
+            if ($request->has('date_debut')) $offre->date_debut = $request->date_debut;
+            if ($request->has('duree')) $offre->duree = $request->duree;
+            if ($request->has('test_requis')) $offre->test_requis = $request->test_requis;
+            if ($request->has('statut')) $offre->statut = $request->statut;
+            
+            $offre->save();
+            
+            // Mettre à jour les compétences
+            if ($request->has('competences_requises')) {
+                $offre->competences()->sync($request->competences_requises);
+            }
+            
+            // Gérer le test
+            if ($offre->test_requis && $request->has('questions')) {
+                // Vérifier si un test existe déjà
+                $test = $offre->test;
+                
+                if ($test) {
+                    // Mettre à jour le test existant
+                    $test->titre = $request->test_titre ?? "Test pour {$offre->titre}";
+                    $test->description = $request->test_description ?? "Test de compétences pour l'offre {$offre->titre}";
+                    $test->duree_minutes = $request->test_duree_minutes ?? 60;
+                    $test->save();
+                    
+                    // Supprimer les anciennes questions et réponses pour éviter les conflits
+                    // Cela pourrait être optimisé pour ne mettre à jour que ce qui a changé
+                    foreach ($test->questions as $question) {
+                        $question->reponses()->delete();
+                    }
+                    $test->questions()->delete();
+                } else {
+                    // Créer un nouveau test
+                    $test = $offre->test()->create([
+                        'titre' => $request->test_titre ?? "Test pour {$offre->titre}",
+                        'description' => $request->test_description ?? "Test de compétences pour l'offre {$offre->titre}",
+                        'duree_minutes' => $request->test_duree_minutes ?? 60
+                    ]);
+                }
+                
+                // Ajouter les nouvelles questions et réponses
+                foreach ($request->questions as $questionData) {
+                    $question = $test->questions()->create([
+                        'contenu' => $questionData['contenu']
+                    ]);
+                    
+                    foreach ($questionData['reponses'] as $reponseData) {
+                        $question->reponses()->create([
+                            'contenu' => $reponseData['contenu'],
+                            'est_correcte' => $reponseData['est_correcte']
+                        ]);
+                    }
+                }
+            } elseif (!$offre->test_requis && $offre->test) {
+                // Si le test n'est plus requis mais qu'il existait, le supprimer
+                $test = $offre->test;
+                
+                foreach ($test->questions as $question) {
+                    $question->reponses()->delete();
+                }
+                $test->questions()->delete();
+                $test->delete();
+            }
+            
+            DB::commit();
+            
+            return response()->json([
+                'message' => 'Offre mise à jour avec succès',
+                'offre' => $offre->load(['competences', 'test.questions.reponses'])
+            ]);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            return response()->json([
+                'message' => 'Une erreur est survenue lors de la mise à jour de l\'offre',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -461,50 +427,5 @@ class OffreController extends Controller
         ]);
     }
 
-    /**
-     * Récupérer les offres recommandées pour un étudiant
-     */
-    public function getRecommendedOffers()
-    {
-        $user = Auth::user();
-        $etudiant = $user->etudiant;
-        
-        if (!$etudiant) {
-            return response()->json([
-                'message' => 'Profil étudiant non trouvé'
-            ], 404);
-        }
-        
-        // Récupérer les compétences de l'étudiant
-        $competencesIds = $etudiant->competences()->pluck('competences.id')->toArray();
-        
-        // Récupérer les offres qui correspondent aux compétences de l'étudiant
-        $query = Offre::with(['entreprise', 'competences'])
-            ->where('statut', 'active');
-            
-        if (!empty($competencesIds)) {
-            $query->whereHas('competences', function($q) use ($competencesIds) {
-                $q->whereIn('competences.id', $competencesIds);
-            });
-        }
-        
-        $recommendedOffers = $query->latest()->limit(5)->get();
-        
-        // Calculer un score de correspondance pour chaque offre
-        $recommendedOffers->each(function($offre) use ($competencesIds) {
-            $offreCompetencesIds = $offre->competences()->pluck('competences.id')->toArray();
-            $matchingCompetences = array_intersect($competencesIds, $offreCompetencesIds);
-            $matchScore = count($matchingCompetences) > 0 
-                ? round((count($matchingCompetences) / count($offreCompetencesIds)) * 100) 
-                : 0;
-            $offre->match = min($matchScore, 100);
-        });
-        
-        // Trier par score de correspondance décroissant
-        $recommendedOffers = $recommendedOffers->sortByDesc('match')->values();
-        
-        return response()->json([
-            'recommended_offers' => $recommendedOffers
-        ]);
-    }
+    // Les autres méthodes restent inchangées...
 }

@@ -4,6 +4,10 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Offre extends Model
 {
@@ -18,7 +22,7 @@ class Offre extends Model
         'entreprise_id',
         'titre',
         'description',
-        'type', // 'stage', 'emploi', 'alternance'
+        'type',
         'niveau_requis',
         'competences_requises',
         'localisation',
@@ -26,7 +30,8 @@ class Offre extends Model
         'date_debut',
         'duree',
         'test_requis',
-        'statut', // 'active', 'inactive', 'cloturee'
+        'statut',
+        'vues_count',
     ];
 
     /**
@@ -39,12 +44,13 @@ class Offre extends Model
         'date_debut' => 'date',
         'duree' => 'integer',
         'test_requis' => 'boolean',
+        'vues_count' => 'integer',
     ];
 
     /**
      * Get the entreprise that owns the offre.
      */
-    public function entreprise()
+    public function entreprise(): BelongsTo
     {
         return $this->belongsTo(Entreprise::class);
     }
@@ -52,7 +58,7 @@ class Offre extends Model
     /**
      * Get the candidatures for the offre.
      */
-    public function candidatures()
+    public function candidatures(): HasMany
     {
         return $this->hasMany(Candidature::class);
     }
@@ -60,7 +66,7 @@ class Offre extends Model
     /**
      * Get the test associated with the offre.
      */
-    public function test()
+    public function test(): HasOne
     {
         return $this->hasOne(Test::class);
     }
@@ -68,7 +74,7 @@ class Offre extends Model
     /**
      * The competences that belong to the offre.
      */
-    public function competences()
+    public function competences(): BelongsToMany
     {
         return $this->belongsToMany(Competence::class, 'offre_competences')
             ->withTimestamps();

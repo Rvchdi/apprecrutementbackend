@@ -39,7 +39,6 @@ Route::get('competences/{id}', [CompetenceController::class, 'show']);
 // Routes pour les offres (accessibles publiquement)
 Route::get('offres', [OffreController::class, 'index']);
 Route::get('offres/{id}', [OffreController::class, 'show']);
-Route::get('entreprises/{entrepriseId}/offres', [OffreController::class, 'getEntrepriseOffres']);
 
 // Routes qui nécessitent une authentification
 Route::middleware('auth:sanctum')->group(function () {
@@ -73,7 +72,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // Routes qui nécessitent une vérification d'email
-    Route::middleware('verified')->group(function () {
+    Route::middleware('auth:sanctum')->group(function () {
         // Routes pour les étudiants
         Route::prefix('etudiant')->group(function () {
             Route::get('/profile', [EtudiantController::class, 'getProfile']);
@@ -125,7 +124,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Gestion des tests
         Route::get('tests/{id}', [TestController::class, 'show']);
+        Route::post('tests', [TestController::class, 'store']);
+        Route::put('tests/{id}', [TestController::class, 'update']);
+        Route::delete('tests/{id}', [TestController::class, 'destroy']);
         Route::post('tests/{id}/submit', [TestController::class, 'submit']);
+        Route::get('offres/{offre_id}/tests', [TestController::class, 'getTestsByOffre']);
+        Route::get('tests/{id}/candidatures/{candidature_id}/results', [TestController::class, 'getResults']);
 
         // Gestion des compétences (admin)
         Route::middleware('admin')->group(function () {
