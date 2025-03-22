@@ -17,6 +17,7 @@ class EntrepriseController extends Controller
     /**
      * Récupérer le profil de l'entreprise authentifiée
      */
+    
     public function getProfile()
     {
         $user = Auth::user();
@@ -255,4 +256,5 @@ class EntrepriseController extends Controller
             'taux_conversion' => $tauxConversion
         ]);
     }
+    
 }
