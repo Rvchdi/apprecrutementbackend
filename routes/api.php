@@ -88,9 +88,9 @@ Route::middleware('auth:sanctum')->group(function () {
             // Gestion des candidatures et tests
             Route::get('/candidatures', [EtudiantController::class, 'getCandidatures']);
             Route::get('/tests', [EtudiantController::class, 'getTests']);
-            
             // Offres recommandées
-            Route::get('/recommended-offers', [OffreController::class, 'getRecommendedOffers']);
+            /*   */
+            Route::post('offres/{id}/postuler', [OffreController::class, 'postuler']);
         });
 
         // Routes pour les entreprises

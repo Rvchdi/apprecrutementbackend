@@ -10,6 +10,7 @@ use App\Models\Test;
 use App\Models\Question;
 use App\Models\Reponse;
 use App\Models\User;
+use App\Models\Notification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
@@ -428,4 +429,91 @@ class OffreController extends Controller
     }
 
     // Les autres méthodes restent inchangées...
+    public function postuler(Request $request, $id)
+{
+    $user = Auth::user();
+    
+    if ($user->role !== 'etudiant') {
+        return response()->json([
+            'message' => 'Seuls les étudiants peuvent postuler aux offres'
+        ], 403);
+    }
+    
+    $validator = Validator::make($request->all(), [
+        'lettre_motivation' => 'required|string|min:100',
+    ]);
+    
+    if ($validator->fails()) {
+        return response()->json([
+            'message' => 'Données invalides',
+            'errors' => $validator->errors()
+        ], 422);
+    }
+    
+    $etudiant = $user->etudiant;
+    
+    // Vérifier si l'offre existe et est active
+    $offre = Offre::where('statut', 'active')->find($id);
+    
+    if (!$offre) {
+        return response()->json([
+            'message' => 'Offre non trouvée ou inactive'
+        ], 404);
+    }
+    
+    // Vérifier que l'étudiant n'a pas déjà postulé
+    if ($etudiant->candidatures()->where('offre_id', $id)->exists()) {
+        return response()->json([
+            'message' => 'Vous avez déjà postulé à cette offre'
+        ], 422);
+    }
+    
+    // Vérifier que le CV de l'étudiant est bien renseigné
+    if (empty($etudiant->cv_file)) {
+        return response()->json([
+            'message' => 'Vous devez télécharger votre CV avant de postuler',
+            'code' => 'CV_REQUIRED'
+        ], 422);
+    }
+    
+    try {
+        DB::beginTransaction();
+        
+        // Créer la candidature
+        $candidature = Candidature::create([
+            'etudiant_id' => $etudiant->id,
+            'offre_id' => $id,
+            'lettre_motivation' => $request->lettre_motivation,
+            'statut' => 'en_attente',
+            'test_complete' => false,
+            'date_candidature' => now()
+        ]);
+        
+        // Créer une notification pour l'entreprise
+        $notification = new Notification([
+            'user_id' => $offre->entreprise->user_id,
+            'titre' => 'Nouvelle candidature',
+            'contenu' => "L'étudiant {$etudiant->user->prenom} {$etudiant->user->nom} a postulé à votre offre : {$offre->titre}",
+            'type' => 'candidature',
+            'lu' => false
+        ]);
+        $notification->save();
+        
+        DB::commit();
+        
+        return response()->json([
+            'message' => 'Candidature envoyée avec succès',
+            'candidature' => $candidature,
+            'test_required' => $offre->test_requis
+        ], 201);
+        
+    } catch (\Exception $e) {
+        DB::rollBack();
+        
+        return response()->json([
+            'message' => 'Une erreur est survenue lors de l\'envoi de la candidature',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
 }
