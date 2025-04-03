@@ -70,9 +70,31 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/conversations/{id}', [MessageController::class, 'getMessages']);
         Route::post('/conversations/{id}', [MessageController::class, 'sendMessage']);
     });
-
+    Route::middleware('auth:sanctum')->get('/check-email-verified', function (Request $request) {
+        $user = $request->user();
+        
+        return response()->json([
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'email_verified_at' => $user->email_verified_at,
+            'email_verified_at_type' => gettype($user->email_verified_at),
+            'email_verified_at_class' => $user->email_verified_at ? get_class($user->email_verified_at) : null,
+            'is_null' => is_null($user->email_verified_at),
+            'cast_to_bool' => (bool)$user->email_verified_at,
+            'db_value_raw' => DB::table('users')->where('id', $user->id)->first()->email_verified_at,
+            'has_verified_email_method' => $user->hasVerifiedEmail(),
+            'is_string' => is_string($user->email_verified_at),
+            'email_verified_at_to_string' => $user->email_verified_at ? (string)$user->email_verified_at : null,
+        ]);
+    });
     // Routes qui nécessitent une vérification d'email
     Route::middleware('auth:sanctum')->group(function () {
+        Route::get('check-email-verified', function (Request $request) {
+            $user = $request->user();
+            return response()->json([
+                'email_verified' => $user && $user->email_verified_at !== null
+            ]);
+        });
         // Routes pour les étudiants
         Route::prefix('etudiant')->group(function () {
             Route::get('/profile', [EtudiantController::class, 'getProfile']);
@@ -121,6 +143,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('candidatures/{id}', [CandidatureController::class, 'show']);
         Route::put('candidatures/{id}', [CandidatureController::class, 'update']);
         Route::delete('candidatures/{id}', [CandidatureController::class, 'cancel']);
+        Route::post('candidatures/{id}/entretien', [EntretienController::class, 'planifierEntretien']);
+        Route::delete('candidatures/{id}/entretien', [EntretienController::class, 'annulerEntretien']);
+        Route::post('candidatures/{id}/confirmer-presence', [EntretienController::class, 'confirmerPresence']);
 
         // Gestion des tests
         Route::get('tests/{id}', [TestController::class, 'show']);

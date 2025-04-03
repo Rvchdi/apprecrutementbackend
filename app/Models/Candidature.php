@@ -24,6 +24,12 @@ class Candidature extends Model
         'score_test',
         'test_complete',
         'date_candidature',
+        'date_entretien',
+        'type_entretien',
+        'lieu_entretien',
+        'lien_visio',
+        'note_entretien',
+        'presence_confirmee',
     ];
 
     /**
@@ -35,6 +41,8 @@ class Candidature extends Model
         'score_test' => 'integer',
         'test_complete' => 'boolean',
         'date_candidature' => 'datetime',
+        'date_entretien' => 'datetime',
+        'presence_confirmee' => 'boolean',
     ];
 
     /**

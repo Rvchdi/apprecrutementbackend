@@ -546,7 +546,7 @@ class AuthController extends Controller
             'message' => 'Mot de passe réinitialisé avec succès'
         ]);
     }
-
+    
     /**
      * Analyser le CV d'un étudiant avec l'IA
      * 
