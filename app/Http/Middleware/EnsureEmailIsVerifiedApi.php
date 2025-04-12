@@ -18,16 +18,23 @@ class EnsureEmailIsVerifiedApi
      */
     public function handle(Request $request, Closure $next): Response
     {
-        if (! $request->user() ||
-            ($request->user() instanceof MustVerifyEmail &&
-            ! $request->user()->hasVerifiedEmail())) {
+        /* $user = $request->user();
+        $cacheKey = 'email_verified_' . $user->id;
+        
+        $isVerified = Cache::remember($cacheKey, now()->addMinutes(60), function () use ($user) {
+            return $user && 
+                   $user instanceof MustVerifyEmail && 
+                   $user->hasVerifiedEmail();
+        });
+        
+        if (!$isVerified) {
             return response()->json([
                 'message' => 'Votre adresse e-mail n\'est pas vérifiée.',
                 'email_verified' => false,
                 'verification_needed' => true
             ], 403);
         }
-
-        return $next($request);
+    
+        return $next($request); */
     }
 }

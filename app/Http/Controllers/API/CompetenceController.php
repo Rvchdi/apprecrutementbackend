@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
+
 use App\Models\Competence;
 use App\Models\Etudiant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 
 class CompetenceController extends Controller
 {
@@ -19,7 +21,10 @@ class CompetenceController extends Controller
      * @return \Illuminate\Http\JsonResponse
      */
     public function index(Request $request)
-    {
+{
+    $cacheKey = 'competences_' . md5(json_encode($request->all()));
+    
+    return Cache::remember($cacheKey, now()->addHours(24), function () use ($request) {
         $query = Competence::query();
         
         // Recherche par nom
@@ -48,7 +53,8 @@ class CompetenceController extends Controller
         return response()->json([
             'competences' => $competences
         ]);
-    }
+    });
+}
     
     /**
      * Récupérer les compétences d'un étudiant

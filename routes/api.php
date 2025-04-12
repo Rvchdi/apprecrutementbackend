@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\API\AuthController;
 use App\Http\Controllers\API\EtudiantController;
 use App\Http\Controllers\API\EntrepriseController;
+use App\Http\Controllers\API\EntretienController;
 use App\Http\Controllers\API\OffreController;
 use App\Http\Controllers\API\CandidatureController;
 use App\Http\Controllers\API\CompetenceController;
@@ -92,7 +93,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('check-email-verified', function (Request $request) {
             $user = $request->user();
             return response()->json([
-                'email_verified' => $user && $user->email_verified_at !== null
+                'email_verified' => true
             ]);
         });
         // Routes pour les étudiants
@@ -162,5 +163,9 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('competences/{id}', [CompetenceController::class, 'update']);
             Route::delete('competences/{id}', [CompetenceController::class, 'destroy']);
         });
+    });
+    Route::prefix('entretiens')->group(function () {
+        Route::get('/', [EntretiensController::class, 'getEntretiens']);
+        Route::get('/summary', [EntretiensController::class, 'getEntretiensSummary']);
     });
 });

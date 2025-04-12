@@ -159,4 +159,53 @@ class CandidatureController extends Controller
             'message' => 'Candidature annulée avec succès'
         ]);
     }
+    public function destroy($id)
+    {
+        try {
+            $user = Auth::user();
+            
+            if ($user->role !== 'entreprise') {
+                return response()->json([
+                    'message' => 'Action non autorisée'
+                ], 403);
+            }
+            
+            $offre = Offre::findOrFail($id);
+            
+            // Vérifier que l'offre appartient à cette entreprise
+            if ($offre->entreprise_id !== $user->entreprise->id) {
+                return response()->json([
+                    'message' => 'Action non autorisée'
+                ], 403);
+            }
+            
+            // Supprimer les relations d'abord
+            $offre->competences()->detach();
+            
+            // S'il y a un test associé, supprimer également
+            if ($offre->test) {
+                // Supprimer les questions et réponses
+                foreach ($offre->test->questions as $question) {
+                    $question->reponses()->delete();
+                }
+                $offre->test->questions()->delete();
+                $offre->test->delete();
+            }
+            
+            // Supprimer l'offre
+            $offre->delete();
+            
+            return response()->json([
+                'message' => 'Offre supprimée avec succès'
+            ]);
+        } catch (\Exception $e) {
+            // Log l'erreur pour le débogage
+            \Log::error('Erreur lors de la suppression d\'une offre: ' . $e->getMessage());
+            
+            return response()->json([
+                'message' => 'Une erreur est survenue lors de la suppression de l\'offre',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }
