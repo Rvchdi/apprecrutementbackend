@@ -35,18 +35,30 @@ class EntrepriseController extends Controller
     /**
      * Mettre à jour le profil entreprise
      */
-    public function updateProfile(Request $request)
+    public function update(Request $request)
     {
+        // Vérifier que l'utilisateur connecté est bien une entreprise
         $user = Auth::user();
+        if (!$user->isEntreprise()) {
+            return response()->json([
+                'message' => 'Accès non autorisé. Seules les entreprises peuvent modifier ce profil.'
+            ], 403);
+        }
+
+        // Récupérer l'entreprise associée à l'utilisateur
         $entreprise = $user->entreprise;
-        
         if (!$entreprise) {
             return response()->json([
                 'message' => 'Profil entreprise non trouvé'
             ], 404);
         }
-        
+
+        // Validation des données
         $validator = Validator::make($request->all(), [
+            'nom' => 'nullable|string|max:255',
+            'prenom' => 'nullable|string|max:255',
+            'telephone' => 'nullable|string|max:20',
+            'photo' => 'nullable|image|max:2048',
             'nom_entreprise' => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'secteur_activite' => 'nullable|string|max:255',
@@ -58,35 +70,113 @@ class EntrepriseController extends Controller
             'code_postal' => 'nullable|string|max:20',
             'pays' => 'nullable|string|max:100'
         ]);
-        
+
         if ($validator->fails()) {
             return response()->json([
                 'message' => 'Données invalides',
                 'errors' => $validator->errors()
             ], 422);
         }
-        
-        // Traiter le fichier logo s'il est présent
-        if ($request->hasFile('logo')) {
-            // Supprimer l'ancien logo si existant
-            if ($entreprise->logo) {
-                Storage::disk('public')->delete($entreprise->logo);
+
+        // Démarrer une transaction pour assurer l'intégrité des données
+        DB::beginTransaction();
+
+        try {
+            // Mettre à jour les informations de l'utilisateur
+            if ($request->filled('nom')) {
+                $user->nom = $request->nom;
             }
             
-            $logoPath = $request->file('logo')->store('logos', 'public');
-            $entreprise->logo = $logoPath;
+            if ($request->filled('prenom')) {
+                $user->prenom = $request->prenom;
+            }
+            
+            if ($request->filled('telephone')) {
+                $user->telephone = $request->telephone;
+            }
+
+            // Traiter la photo de profil
+            if ($request->hasFile('photo')) {
+                // Supprimer l'ancienne photo si elle existe
+                if ($user->photo && Storage::disk('public')->exists($user->photo)) {
+                    Storage::disk('public')->delete($user->photo);
+                }
+                
+                // Stocker la nouvelle photo
+                $photoPath = $request->file('photo')->store('photos', 'public');
+                $user->photo = $photoPath;
+            }
+
+            // Sauvegarder les modifications de l'utilisateur
+            $user->save();
+
+            // Mettre à jour les informations de l'entreprise
+            $entrepriseFields = [
+                'nom_entreprise', 'description', 'secteur_activite', 'taille', 
+                'site_web', 'adresse', 'ville', 'code_postal', 'pays'
+            ];
+
+            foreach ($entrepriseFields as $field) {
+                if ($request->filled($field)) {
+                    $entreprise->$field = $request->$field;
+                }
+            }
+
+            // Traiter le logo
+            if ($request->hasFile('logo')) {
+                // Supprimer l'ancien logo s'il existe
+                if ($entreprise->logo && Storage::disk('public')->exists($entreprise->logo)) {
+                    Storage::disk('public')->delete($entreprise->logo);
+                }
+                
+                // Stocker le nouveau logo
+                $logoPath = $request->file('logo')->store('logos', 'public');
+                $entreprise->logo = $logoPath;
+            }
+
+            // Sauvegarder les modifications de l'entreprise
+            $entreprise->save();
+
+            // Valider la transaction
+            DB::commit();
+
+            // Construire la réponse
+            $responseData = [
+                'message' => 'Profil mis à jour avec succès',
+                'user' => [
+                    'id' => $user->id,
+                    'nom' => $user->nom,
+                    'prenom' => $user->prenom,
+                    'email' => $user->email,
+                    'telephone' => $user->telephone,
+                    'photo' => $user->photo ? url('storage/'.$user->photo) : null
+                ],
+                'entreprise' => $entreprise->toArray()
+            ];
+
+            // Ajouter l'URL du logo s'il existe
+            if ($entreprise->logo) {
+                $responseData['entreprise']['logo_url'] = url('storage/'.$entreprise->logo);
+            }
+
+            return response()->json($responseData);
+
+        } catch (\Exception $e) {
+            // Annuler la transaction en cas d'erreur
+            DB::rollBack();
+            
+            Log::error('Erreur lors de la mise à jour du profil entreprise', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'message' => 'Une erreur est survenue lors de la mise à jour du profil',
+                'error' => $e->getMessage()
+            ], 500);
         }
-        
-        // Mettre à jour les autres champs
-        $entreprise->fill($request->except('logo'));
-        $entreprise->save();
-        
-        return response()->json([
-            'message' => 'Profil mis à jour avec succès',
-            'entreprise' => $entreprise
-        ]);
     }
-    
     /**
      * Récupérer les offres de l'entreprise
      */

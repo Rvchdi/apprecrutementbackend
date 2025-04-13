@@ -95,6 +95,16 @@ Route::middleware('auth:sanctum')->group(function () {
             return response()->json([
                 'email_verified' => true
             ]);
+        Route::get('/etudiant/profile', [EtudiantController::class, 'getProfile']);
+    
+            // Nouvelle route pour mettre à jour le profil étudiant
+        Route::post('/etudiant/profile', [EtudiantController::class, 'update']);
+            
+            // Route existante pour récupérer le profil entreprise
+        Route::get('/entreprise/profile', [EntrepriseController::class, 'getProfile']);
+            
+            // Nouvelle route pour mettre à jour le profil entreprise
+        Route::post('/entreprise/profile', [EntrepriseController::class, 'update']);
         });
         // Routes pour les étudiants
         Route::prefix('etudiant')->group(function () {

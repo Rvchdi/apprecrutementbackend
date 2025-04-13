@@ -17,6 +17,7 @@ use Illuminate\Support\Str;
 use App\Notifications\VerifyEmailNotification;
 use Illuminate\Support\Facades\URL;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log; 
 
 class AuthController extends Controller
 {
@@ -28,7 +29,9 @@ class AuthController extends Controller
      */
     public function register(Request $request)
     {
-        \Log::info('Données reçues pour l\'inscription:', $request->all());
+        // Log pour déboguer les données reçues
+        Log::info('Données reçues pour l\'inscription:', $request->all());
+
         // Validation des données de base requises pour tous les types d'utilisateurs
         $validator = Validator::make($request->all(), [
             'nom' => 'required|string|max:255',
@@ -41,7 +44,7 @@ class AuthController extends Controller
         ]);
     
         if ($validator->fails()) {
-            \Log::warning('Échec de validation de base:', $validator->errors()->toArray());
+            Log::warning('Échec de validation de base:', $validator->errors()->toArray());
             return response()->json([
                 'message' => 'Données invalides',
                 'errors' => $validator->errors()
@@ -58,11 +61,11 @@ class AuthController extends Controller
                 'annee_diplome' => 'nullable|integer',
                 'disponibilite' => 'required|in:immédiate,1_mois,3_mois,6_mois',
                 'cv_file' => 'nullable|file|mimes:pdf|max:5120',
-                'competences' => 'nullable', // Assurez-vous que la validation est permissive
+                'competences' => 'nullable', 
             ]);
     
             if ($validatorEtudiant->fails()) {
-                \Log::warning('Échec de validation étudiant:', $validatorEtudiant->errors()->toArray());
+                Log::warning('Échec de validation étudiant:', $validatorEtudiant->errors()->toArray());
                 return response()->json([
                     'message' => 'Données étudiant invalides',
                     'errors' => $validatorEtudiant->errors()
@@ -78,6 +81,7 @@ class AuthController extends Controller
             ]);
 
             if ($validatorEntreprise->fails()) {
+                Log::warning('Échec de validation entreprise:', $validatorEntreprise->errors()->toArray());
                 return response()->json([
                     'message' => 'Données entreprise invalides',
                     'errors' => $validatorEntreprise->errors()
@@ -121,32 +125,44 @@ class AuthController extends Controller
                     'adresse' => $request->adresse,
                     'ville' => $request->ville,
                     'code_postal' => $request->code_postal,
-                    'pays' => $request->pays,
+                    'pays' => $request->pays ?? 'France',
                 ]);
 
-                // Traiter les compétences si elles sont fournies
-                if ($request->has('competences') && !empty($request->competences)) {
-                    $competencesArray = is_string($request->competences) 
-                        ? explode(',', $request->competences) 
-                        : json_decode($request->competences);
+                // Traiter les compétences
+                // Dans la partie où les compétences sont traitées
+            if ($request->has('competences') && !empty($request->competences)) {
+                try {
+                    $competencesData = is_string($request->competences) 
+                        ? json_decode($request->competences, true) 
+                        : $request->competences;
                     
-                    foreach ($competencesArray as $comp) {
-                        $comp = trim($comp);
-                        if (!empty($comp)) {
-                            // Trouver ou créer la compétence
-                            $competence = Competence::firstOrCreate(['nom' => $comp]);
+                    // Si c'est un tableau, traiter chaque élément
+                    if (is_array($competencesData)) {
+                        foreach ($competencesData as $comp) {
+                            $compId = null;
+                            $niveau = 'débutant';
                             
-                            // Associer à l'étudiant avec niveau débutant par défaut
-                            $etudiant->competences()->attach($competence->id, ['niveau' => 'débutant']);
+                            // Déterminer si c'est un ID ou un objet
+                            if (is_array($comp) && isset($comp['id'])) {
+                                $compId = $comp['id'];
+                                $niveau = $comp['niveau'] ?? 'débutant';
+                            } elseif (is_numeric($comp)) {
+                                $compId = $comp;
+                            } elseif (is_string($comp)) {
+                                // Créer ou trouver la compétence par nom
+                                $competence = Competence::firstOrCreate(['nom' => trim($comp)]);
+                                $compId = $competence->id;
+                            }
+                            
+                            if ($compId) {
+                                $etudiant->competences()->attach($compId, ['niveau' => $niveau]);
+                            }
                         }
                     }
+                } catch (\Exception $e) {
+                    Log::error('Erreur lors du traitement des compétences: ' . $e->getMessage());
                 }
-
-                // Analyser le CV avec l'IA si un CV a été téléchargé
-                if ($cvPath) {
-                    // TODO: Logique d'analyse de CV avec l'IA
-                    // $this->analyzeCV($etudiant, $cvPath);
-                }
+            }
             } elseif ($request->role === 'entreprise') {
                 // Créer le profil entreprise
                 $entreprise = Entreprise::create([
@@ -159,40 +175,36 @@ class AuthController extends Controller
                     'adresse' => $request->adresse,
                     'ville' => $request->ville,
                     'code_postal' => $request->code_postal,
-                    'pays' => $request->pays,
+                    'pays' => $request->pays ?? 'France',
                     'est_verifie' => false, // Par défaut, les entreprises ne sont pas vérifiées
                 ]);
             }
 
-                // Générer un token de vérification pour l'email
-                $verificationToken = $this->generateVerificationToken($user);
+            // Générer un token de vérification pour l'email
+            $verificationToken = $this->generateVerificationToken($user);
 
-                // Ajouter des logs pour le débogage
-                \Log::info('Envoi de l\'email de vérification à ' . $user->email . ' avec le token ' . $verificationToken);
+            // Envoyer l'email de vérification
+            try {
+                $user->notify(new VerifyEmailNotification($verificationToken));
+                Log::info('Email de vérification envoyé avec succès à ' . $user->email);
+            } catch (\Exception $e) {
+                Log::error('Erreur lors de l\'envoi de l\'email de vérification: ' . $e->getMessage());
+            }
 
-                try {
-                    // Envoyer l'email de vérification
-                    $user->notify(new VerifyEmailNotification($verificationToken));
-                    \Log::info('Email de vérification envoyé avec succès');
-                } catch (\Exception $e) {
-                    \Log::error('Erreur lors de l\'envoi de l\'email de vérification: ' . $e->getMessage());
-                }
+            DB::commit();
 
-                DB::commit();
+            // Générer un token API pour la session
+            $token = $user->createToken('auth_token')->plainTextToken;
 
-                // Générer un token API pour la session
-                $token = $user->createToken('auth_token')->plainTextToken;
-
-                // Pour faciliter les tests, inclure le token de vérification dans la réponse
-                return response()->json([
-                    'message' => 'Utilisateur créé avec succès. Veuillez vérifier votre adresse email.',
-                    'user' => $user,
-                    'token' => $token,
-                    'token_type' => 'Bearer',
-                    'verification_token' => $verificationToken // Uniquement pour les tests, à supprimer en production
-                ], 201);
+            return response()->json([
+                'message' => 'Utilisateur créé avec succès. Veuillez vérifier votre adresse email.',
+                'user' => $user,
+                'token' => $token,
+                'token_type' => 'Bearer',
+                'verification_token' => $verificationToken // Uniquement pour les tests, à supprimer en production
+            ], 201);
         } catch (\Exception $e) {
-            \Log::error('Erreur : ' . $e->getMessage(), [
+            Log::error('Erreur lors de l\'inscription: ' . $e->getMessage(), [
                 'exception' => $e
             ]);
         

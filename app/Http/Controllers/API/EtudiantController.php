@@ -174,87 +174,171 @@ class EtudiantController extends Controller
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function updateProfile(Request $request)
+    public function update(Request $request)
     {
-        // Vérifier l'accès
-        $accessCheck = $this->checkEtudiantAccess();
-        if ($accessCheck) return $accessCheck;
-        
+        // Vérifier que l'utilisateur connecté est bien un étudiant
+        $user = Auth::user();
+        if (!$user->isEtudiant()) {
+            return response()->json([
+                'message' => 'Accès non autorisé. Seuls les étudiants peuvent modifier ce profil.'
+            ], 403);
+        }
+
+        // Récupérer l'étudiant associé à l'utilisateur
+        $etudiant = $user->etudiant;
+        if (!$etudiant) {
+            return response()->json([
+                'message' => 'Profil étudiant non trouvé'
+            ], 404);
+        }
+
+        // Validation des données
         $validator = Validator::make($request->all(), [
             'nom' => 'nullable|string|max:255',
             'prenom' => 'nullable|string|max:255',
             'telephone' => 'nullable|string|max:20',
+            'photo' => 'nullable|image|max:2048',
             'date_naissance' => 'nullable|date',
-            'niveau_etude' => 'nullable|string|max:255',
+            'adresse' => 'nullable|string|max:255',
+            'ville' => 'nullable|string|max:255',
+            'code_postal' => 'nullable|string|max:20',
+            'pays' => 'nullable|string|max:100',
+            'niveau_etude' => 'nullable|string|max:50',
             'filiere' => 'nullable|string|max:255',
             'ecole' => 'nullable|string|max:255',
             'annee_diplome' => 'nullable|integer',
+            'disponibilite' => 'nullable|in:immédiate,1_mois,3_mois,6_mois',
             'linkedin_url' => 'nullable|url|max:255',
             'portfolio_url' => 'nullable|url|max:255',
-            'disponibilite' => 'nullable|in:immédiate,1_mois,3_mois,6_mois',
-            'photo' => 'nullable|image|max:2048'
+            'cv_file' => 'nullable|file|mimes:pdf|max:5120',
+            'competences' => 'nullable|json'
         ]);
-        
+
         if ($validator->fails()) {
             return response()->json([
                 'message' => 'Données invalides',
                 'errors' => $validator->errors()
             ], 422);
         }
-        
-        $user = Auth::user();
-        $etudiant = $user->etudiant;
-        $etudiantId = $etudiant->id;
-        
-        // Mettre à jour les informations utilisateur si fournies
-        if ($request->has('nom')) {
-            $user->nom = $request->nom;
-        }
-        
-        if ($request->has('prenom')) {
-            $user->prenom = $request->prenom;
-        }
-        
-        if ($request->has('telephone')) {
-            $user->telephone = $request->telephone;
-        }
-        
-        // Traiter la photo si présente
-        if ($request->hasFile('photo')) {
-            // Supprimer l'ancienne photo si elle existe
-            if ($user->photo && Storage::disk('public')->exists($user->photo)) {
-                Storage::disk('public')->delete($user->photo);
+
+        // Démarrer une transaction pour assurer l'intégrité des données
+        DB::beginTransaction();
+
+        try {
+            // Mettre à jour les informations de l'utilisateur
+            if ($request->filled('nom')) {
+                $user->nom = $request->nom;
             }
             
-            $photoPath = $request->file('photo')->store('photos', 'public');
-            $user->photo = $photoPath;
+            if ($request->filled('prenom')) {
+                $user->prenom = $request->prenom;
+            }
+            
+            if ($request->filled('telephone')) {
+                $user->telephone = $request->telephone;
+            }
+
+            // Traiter la photo de profil
+            if ($request->hasFile('photo')) {
+                // Supprimer l'ancienne photo si elle existe
+                if ($user->photo && Storage::disk('public')->exists($user->photo)) {
+                    Storage::disk('public')->delete($user->photo);
+                }
+                
+                // Stocker la nouvelle photo
+                $photoPath = $request->file('photo')->store('photos', 'public');
+                $user->photo = $photoPath;
+            }
+
+            // Sauvegarder les modifications de l'utilisateur
+            $user->save();
+
+            // Mettre à jour les informations de l'étudiant
+            $etudiantFields = [
+                'date_naissance', 'adresse', 'ville', 'code_postal', 'pays',
+                'niveau_etude', 'filiere', 'ecole', 'annee_diplome',
+                'disponibilite', 'linkedin_url', 'portfolio_url'
+            ];
+
+            foreach ($etudiantFields as $field) {
+                if ($request->filled($field)) {
+                    $etudiant->$field = $request->$field;
+                }
+            }
+
+            // Traiter le CV
+            if ($request->hasFile('cv_file')) {
+                // Supprimer l'ancien CV s'il existe
+                if ($etudiant->cv_file && Storage::disk('public')->exists($etudiant->cv_file)) {
+                    Storage::disk('public')->delete($etudiant->cv_file);
+                }
+                
+                // Stocker le nouveau CV
+                $cvPath = $request->file('cv_file')->store('cv_files', 'public');
+                $etudiant->cv_file = $cvPath;
+            }
+
+            // Sauvegarder les modifications de l'étudiant
+            $etudiant->save();
+
+            // Gérer les compétences si elles sont fournies
+            if ($request->filled('competences')) {
+                $competencesData = json_decode($request->competences, true);
+                
+                if (is_array($competencesData)) {
+                    // Supprimer toutes les compétences actuelles
+                    $etudiant->competences()->detach();
+                    
+                    // Ajouter les nouvelles compétences
+                    foreach ($competencesData as $competenceData) {
+                        if (isset($competenceData['id']) && isset($competenceData['niveau'])) {
+                            $etudiant->competences()->attach($competenceData['id'], [
+                                'niveau' => $competenceData['niveau']
+                            ]);
+                        }
+                    }
+                }
+            }
+
+            // Valider la transaction
+            DB::commit();
+
+            // Construire la réponse
+            $responseData = [
+                'message' => 'Profil mis à jour avec succès',
+                'user' => [
+                    'id' => $user->id,
+                    'nom' => $user->nom,
+                    'prenom' => $user->prenom,
+                    'email' => $user->email,
+                    'telephone' => $user->telephone,
+                    'photo' => $user->photo ? url('storage/'.$user->photo) : null
+                ],
+                'etudiant' => $etudiant->toArray()
+            ];
+
+            // Ajouter l'URL du CV s'il existe
+            if ($etudiant->cv_file) {
+                $responseData['etudiant']['cv_url'] = url('storage/'.$etudiant->cv_file);
+            }
+
+            return response()->json($responseData);
+
+        } catch (\Exception $e) {
+            // Annuler la transaction en cas d'erreur
+            DB::rollBack();
+            
+            Log::error('Erreur lors de la mise à jour du profil étudiant', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'message' => 'Une erreur est survenue lors de la mise à jour du profil',
+                'error' => $e->getMessage()
+            ], 500);
         }
-        
-        $user->save();
-        
-        // Mettre à jour les données du profil étudiant
-        $etudiantData = $request->only([
-            'date_naissance',
-            'niveau_etude',
-            'filiere',
-            'ecole',
-            'annee_diplome',
-            'linkedin_url',
-            'portfolio_url',
-            'disponibilite'
-        ]);
-        
-        $etudiant->update(array_filter($etudiantData));
-        
-        // Invalider les caches liés à cet étudiant
-        Cache::forget("etudiant.{$etudiantId}.profile");
-        Cache::forget("etudiant.{$etudiantId}.summary");
-        
-        return response()->json([
-            'message' => 'Profil mis à jour avec succès',
-            'user' => $user,
-            'etudiant' => $etudiant
-        ]);
     }
     
     /**
