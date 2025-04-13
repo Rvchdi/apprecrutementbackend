@@ -21,15 +21,23 @@ class EntrepriseController extends Controller
     public function getProfile()
     {
         $user = Auth::user();
-        $entreprise = $user->entreprise;
-        
-        if (!$entreprise) {
-            return response()->json([
-                'message' => 'Profil entreprise non trouvé'
-            ], 404);
-        }
-        
-        return response()->json($entreprise);
+    $entreprise = $user->entreprise;
+    
+    if (!$entreprise) {
+        return response()->json([
+            'message' => 'Profil entreprise non trouvé'
+        ], 404);
+    }
+    
+    return response()->json([
+        'user' => [
+            'nom' => $user->nom,
+            'prenom' => $user->prenom,
+            'email' => $user->email,
+            'telephone' => $user->telephone
+        ],
+        'entreprise' => $entreprise->toArray()
+    ]);
     }
     
     /**
