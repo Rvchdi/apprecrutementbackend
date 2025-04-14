@@ -13,6 +13,7 @@ use App\Http\Controllers\API\TestController;
 use App\Http\Controllers\API\NotificationController;
 use App\Http\Controllers\API\MessageController;
 
+
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -40,7 +41,39 @@ Route::get('competences/{id}', [CompetenceController::class, 'show']);
 // Routes pour les offres (accessibles publiquement)
 Route::get('offres', [OffreController::class, 'index']);
 Route::get('offres/{id}', [OffreController::class, 'show']);
-
+// Routes du dashboard administrateur
+Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
+    // Middleware de rôle pour protéger toutes les routes admin
+    Route::middleware('role:admin')->group(function () {
+        // Statistiques du dashboard
+        Route::get('/stats', [AdminController::class, 'getStats']);
+        
+        // Gestion des utilisateurs
+        Route::get('/users', [AdminController::class, 'getUsers']);
+        Route::put('/users/{id}', [AdminController::class, 'updateUser']);
+        Route::delete('/users/{id}', [AdminController::class, 'deleteUser']);
+        
+        // Gestion des compétences
+        Route::get('/competences', [AdminController::class, 'getCompetences']);
+        Route::post('/competences', [AdminController::class, 'createCompetence']);
+        Route::put('/competences/{id}', [AdminController::class, 'updateCompetence']);
+        Route::delete('/competences/{id}', [AdminController::class, 'deleteCompetence']);
+        
+        // Gestion des offres
+        Route::get('/offres', [AdminController::class, 'getOffres']);
+        Route::delete('/offres/{id}', [AdminController::class, 'deleteOffre']);
+        
+        // Paramètres de l'application
+        Route::get('/settings', [AdminController::class, 'getSettings']);
+        Route::put('/settings', [AdminController::class, 'updateSettings']);
+        
+        // Routes supplémentaires (optionnelles)
+        Route::get('/candidatures', [AdminController::class, 'getAllCandidatures']);
+        Route::get('/tests', [AdminController::class, 'getAllTests']);
+        Route::get('/activities', [AdminController::class, 'getRecentActivities']);
+        Route::get('/logs', [AdminController::class, 'getSystemLogs']);
+    });
+});
 // Routes qui nécessitent une authentification
 Route::middleware('auth:sanctum')->group(function () {
     // Routes d'authentification authentifiées
@@ -104,7 +137,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/entreprise/profile', [EntrepriseController::class, 'getProfile']);
             
             // Nouvelle route pour mettre à jour le profil entreprise
-        Route::post('/entreprise/profile', [EntrepriseController::class, 'update']);
+        Route::post('/entreprise/profile', [EntrepriseController::class, 'updateProfile']);
         });
         // Routes pour les étudiants
         Route::prefix('etudiant')->group(function () {

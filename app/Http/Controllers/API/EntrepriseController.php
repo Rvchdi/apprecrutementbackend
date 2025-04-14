@@ -11,6 +11,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log; 
 
 class EntrepriseController extends Controller
 {
@@ -43,144 +45,76 @@ class EntrepriseController extends Controller
     /**
      * Mettre à jour le profil entreprise
      */
-    public function update(Request $request)
+    public function updateProfile(Request $request)
     {
-        // Vérifier que l'utilisateur connecté est bien une entreprise
+        Log::info('Contenu brut de la requête:', ['content' => $request->getContent()]);
+        
+        // Récupérer les données du corps de la requête directement
+        $input = $request->all();
+        
+        // Si $request->all() est vide mais que le contenu est présent
+        if (empty($input) && strpos($request->header('Content-Type'), 'multipart/form-data') !== false) {
+            // Solution alternative pour récupérer les données
+            $input = [];
+            foreach ($_POST as $key => $value) {
+                $input[$key] = $value;
+            }
+            Log::info('Données extraites manuellement:', $input);
+        }
+        
         $user = Auth::user();
-        if (!$user->isEntreprise()) {
-            return response()->json([
-                'message' => 'Accès non autorisé. Seules les entreprises peuvent modifier ce profil.'
-            ], 403);
-        }
-
-        // Récupérer l'entreprise associée à l'utilisateur
         $entreprise = $user->entreprise;
+        
         if (!$entreprise) {
-            return response()->json([
-                'message' => 'Profil entreprise non trouvé'
-            ], 404);
+            return response()->json(['message' => 'Profil non trouvé'], 404);
         }
-
-        // Validation des données
-        $validator = Validator::make($request->all(), [
-            'nom' => 'nullable|string|max:255',
-            'prenom' => 'nullable|string|max:255',
-            'telephone' => 'nullable|string|max:20',
-            'photo' => 'nullable|image|max:2048',
-            'nom_entreprise' => 'nullable|string|max:255',
-            'description' => 'nullable|string',
-            'secteur_activite' => 'nullable|string|max:255',
-            'taille' => 'nullable|string|max:50',
-            'site_web' => 'nullable|url|max:255',
-            'logo' => 'nullable|image|max:2048',
-            'adresse' => 'nullable|string|max:255',
-            'ville' => 'nullable|string|max:255',
-            'code_postal' => 'nullable|string|max:20',
-            'pays' => 'nullable|string|max:100'
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Données invalides',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        // Démarrer une transaction pour assurer l'intégrité des données
-        DB::beginTransaction();
-
+        
+        Log::info('Données extraites de la requête:', $input);
+        
         try {
-            // Mettre à jour les informations de l'utilisateur
-            if ($request->filled('nom')) {
-                $user->nom = $request->nom;
-            }
-            
-            if ($request->filled('prenom')) {
-                $user->prenom = $request->prenom;
-            }
-            
-            if ($request->filled('telephone')) {
-                $user->telephone = $request->telephone;
-            }
-
-            // Traiter la photo de profil
-            if ($request->hasFile('photo')) {
-                // Supprimer l'ancienne photo si elle existe
-                if ($user->photo && Storage::disk('public')->exists($user->photo)) {
-                    Storage::disk('public')->delete($user->photo);
-                }
-                
-                // Stocker la nouvelle photo
-                $photoPath = $request->file('photo')->store('photos', 'public');
-                $user->photo = $photoPath;
-            }
-
-            // Sauvegarder les modifications de l'utilisateur
+            // Mise à jour utilisateur
+            if (!empty($input['nom'])) $user->nom = $input['nom'];
+            if (!empty($input['prenom'])) $user->prenom = $input['prenom'];
+            if (!empty($input['telephone'])) $user->telephone = $input['telephone'];
             $user->save();
-
-            // Mettre à jour les informations de l'entreprise
-            $entrepriseFields = [
-                'nom_entreprise', 'description', 'secteur_activite', 'taille', 
-                'site_web', 'adresse', 'ville', 'code_postal', 'pays'
-            ];
-
-            foreach ($entrepriseFields as $field) {
-                if ($request->filled($field)) {
-                    $entreprise->$field = $request->$field;
-                }
-            }
-
-            // Traiter le logo
-            if ($request->hasFile('logo')) {
-                // Supprimer l'ancien logo s'il existe
-                if ($entreprise->logo && Storage::disk('public')->exists($entreprise->logo)) {
-                    Storage::disk('public')->delete($entreprise->logo);
-                }
-                
-                // Stocker le nouveau logo
-                $logoPath = $request->file('logo')->store('logos', 'public');
-                $entreprise->logo = $logoPath;
-            }
-
-            // Sauvegarder les modifications de l'entreprise
-            $entreprise->save();
-
-            // Valider la transaction
-            DB::commit();
-
-            // Construire la réponse
-            $responseData = [
-                'message' => 'Profil mis à jour avec succès',
-                'user' => [
-                    'id' => $user->id,
-                    'nom' => $user->nom,
-                    'prenom' => $user->prenom,
-                    'email' => $user->email,
-                    'telephone' => $user->telephone,
-                    'photo' => $user->photo ? url('storage/'.$user->photo) : null
-                ],
-                'entreprise' => $entreprise->toArray()
-            ];
-
-            // Ajouter l'URL du logo s'il existe
-            if ($entreprise->logo) {
-                $responseData['entreprise']['logo_url'] = url('storage/'.$entreprise->logo);
-            }
-
-            return response()->json($responseData);
-
-        } catch (\Exception $e) {
-            // Annuler la transaction en cas d'erreur
-            DB::rollBack();
             
-            Log::error('Erreur lors de la mise à jour du profil entreprise', [
-                'user_id' => $user->id,
-                'error' => $e->getMessage(),
+            // Mise à jour entreprise
+            if (!empty($input['nom_entreprise'])) $entreprise->nom_entreprise = $input['nom_entreprise'];
+            if (!empty($input['description'])) $entreprise->description = $input['description'];
+            if (!empty($input['secteur_activite'])) $entreprise->secteur_activite = $input['secteur_activite'];
+            if (!empty($input['taille'])) $entreprise->taille = $input['taille'];
+            if (!empty($input['site_web'])) $entreprise->site_web = $input['site_web'];
+            if (!empty($input['adresse'])) $entreprise->adresse = $input['adresse'];
+            if (!empty($input['ville'])) $entreprise->ville = $input['ville'];
+            if (!empty($input['code_postal'])) $entreprise->code_postal = $input['code_postal'];
+            if (!empty($input['pays'])) $entreprise->pays = $input['pays'];
+            
+            $entrepriseSaved = $entreprise->save();
+            
+            // Vérifiez l'état final
+            $refreshed = $entreprise->fresh();
+            Log::info('État après sauvegarde:', [
+                'saved' => $entrepriseSaved,
+                'new_sector' => $refreshed->secteur_activite,
+                'new_taille' => $refreshed->taille,
+                'new_website' => $refreshed->site_web
+            ]);
+            
+            return response()->json([
+                'message' => 'Profil mis à jour avec succès',
+                'user' => $user->toArray(),
+                'entreprise' => $refreshed->toArray(),
+                'data_received' => $input
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Erreur lors de la mise à jour:', [
+                'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-
+            
             return response()->json([
-                'message' => 'Une erreur est survenue lors de la mise à jour du profil',
+                'message' => 'Erreur lors de la mise à jour',
                 'error' => $e->getMessage()
             ], 500);
         }
