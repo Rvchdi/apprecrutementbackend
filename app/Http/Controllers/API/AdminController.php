@@ -9,8 +9,6 @@ use App\Models\Competence;
 use App\Models\Offre;
 use App\Models\Candidature;
 use App\Models\Setting;
-use App\Models\Etudiant;
-use App\Models\Entreprise;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 
@@ -383,10 +381,7 @@ class AdminController extends Controller
             }
         }
         
-        // Ajouter le comptage des candidatures
-        $query->withCount('candidatures');
-        
-        $offres = $query->get();
+        $offres = $query->paginate(15);
         
         return response()->json([
             'offres' => $offres
@@ -403,9 +398,9 @@ class AdminController extends Controller
     {
         $offre = Offre::findOrFail($id);
         
+        DB::beginTransaction();
+        
         try {
-            DB::beginTransaction();
-            
             // Supprimer le test associé et ses questions/réponses
             if ($offre->test) {
                 foreach ($offre->test->questions as $question) {
@@ -446,7 +441,7 @@ class AdminController extends Controller
      * Récupérer les paramètres de l'application
      *
      * @return \Illuminate\Http\JsonResponse
-     */
+     * */
     public function getSettings()
     {
         $settings = Setting::pluck('value', 'key')->toArray();

@@ -1,12 +1,12 @@
 <?php
 
-namespace App\Http\Middleware;
 
+namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
-class CheckRole
+class RoleMiddleware
 {
     /**
      * Handle an incoming request.

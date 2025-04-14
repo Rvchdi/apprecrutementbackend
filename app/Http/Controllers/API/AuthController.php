@@ -350,7 +350,11 @@ class AuthController extends Controller
     public function me(Request $request)
     {
         $user = $request->user();
-
+        \Log::info('User authenticated', [
+            'user_id' => $user->id,
+            'user_role' => $user->role,
+            'email' => $user->email
+        ]);
         // Charger les informations supplémentaires en fonction du rôle
         if ($user->role === 'etudiant') {
             $user->load(['etudiant', 'etudiant.competences']);

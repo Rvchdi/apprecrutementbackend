@@ -3,6 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\API\AuthController;
+use App\Http\Controllers\API\AdminController;
 use App\Http\Controllers\API\EtudiantController;
 use App\Http\Controllers\API\EntrepriseController;
 use App\Http\Controllers\API\EntretienController;
@@ -42,37 +43,28 @@ Route::get('competences/{id}', [CompetenceController::class, 'show']);
 Route::get('offres', [OffreController::class, 'index']);
 Route::get('offres/{id}', [OffreController::class, 'show']);
 // Routes du dashboard administrateur
-Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
-    // Middleware de rôle pour protéger toutes les routes admin
-    Route::middleware('role:admin')->group(function () {
-        // Statistiques du dashboard
-        Route::get('/stats', [AdminController::class, 'getStats']);
-        
-        // Gestion des utilisateurs
-        Route::get('/users', [AdminController::class, 'getUsers']);
-        Route::put('/users/{id}', [AdminController::class, 'updateUser']);
-        Route::delete('/users/{id}', [AdminController::class, 'deleteUser']);
-        
-        // Gestion des compétences
-        Route::get('/competences', [AdminController::class, 'getCompetences']);
-        Route::post('/competences', [AdminController::class, 'createCompetence']);
-        Route::put('/competences/{id}', [AdminController::class, 'updateCompetence']);
-        Route::delete('/competences/{id}', [AdminController::class, 'deleteCompetence']);
-        
-        // Gestion des offres
-        Route::get('/offres', [AdminController::class, 'getOffres']);
-        Route::delete('/offres/{id}', [AdminController::class, 'deleteOffre']);
-        
-        // Paramètres de l'application
-        Route::get('/settings', [AdminController::class, 'getSettings']);
-        Route::put('/settings', [AdminController::class, 'updateSettings']);
-        
-        // Routes supplémentaires (optionnelles)
-        Route::get('/candidatures', [AdminController::class, 'getAllCandidatures']);
-        Route::get('/tests', [AdminController::class, 'getAllTests']);
-        Route::get('/activities', [AdminController::class, 'getRecentActivities']);
-        Route::get('/logs', [AdminController::class, 'getSystemLogs']);
-    });
+Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
+    // Statistiques du dashboard
+    Route::get('/stats', [AdminController::class, 'getStats']);
+    
+    // Gestion des utilisateurs
+    Route::get('/users', [AdminController::class, 'getUsers']);
+    Route::put('/users/{id}', [AdminController::class, 'updateUser']);
+    Route::delete('/users/{id}', [AdminController::class, 'deleteUser']);
+    
+    // Gestion des compétences
+    Route::get('/competences', [AdminController::class, 'getCompetences']);
+    Route::post('/competences', [AdminController::class, 'createCompetence']);
+    Route::put('/competences/{id}', [AdminController::class, 'updateCompetence']);
+    Route::delete('/competences/{id}', [AdminController::class, 'deleteCompetence']);
+    
+    // Gestion des offres
+    Route::get('/offres', [AdminController::class, 'getOffres']);
+    Route::delete('/offres/{id}', [AdminController::class, 'deleteOffre']);
+    
+    // Paramètres de l'application
+    Route::get('/settings', [AdminController::class, 'getSettings']);
+    Route::put('/settings', [AdminController::class, 'updateSettings']);
 });
 // Routes qui nécessitent une authentification
 Route::middleware('auth:sanctum')->group(function () {
