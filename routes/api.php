@@ -3,7 +3,6 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\API\AuthController;
-use App\Http\Controllers\API\AdminController;
 use App\Http\Controllers\API\EtudiantController;
 use App\Http\Controllers\API\EntrepriseController;
 use App\Http\Controllers\API\EntretienController;
@@ -13,7 +12,7 @@ use App\Http\Controllers\API\CompetenceController;
 use App\Http\Controllers\API\TestController;
 use App\Http\Controllers\API\NotificationController;
 use App\Http\Controllers\API\MessageController;
-
+use App\Http\Middleware\AdminMiddleware;
 
 /*
 |--------------------------------------------------------------------------
@@ -21,8 +20,7 @@ use App\Http\Controllers\API\MessageController;
 |--------------------------------------------------------------------------
 |
 | Voici où vous pouvez enregistrer les routes API pour votre application.
-| Ces routes sont chargées par RouteServiceProvider et toutes sont 
-| affectées au groupe de middleware "api".
+| Ces routes sont chargées par RouteServiceProvider.
 |
 */
 
@@ -42,30 +40,7 @@ Route::get('competences/{id}', [CompetenceController::class, 'show']);
 // Routes pour les offres (accessibles publiquement)
 Route::get('offres', [OffreController::class, 'index']);
 Route::get('offres/{id}', [OffreController::class, 'show']);
-// Routes du dashboard administrateur
-Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
-    // Statistiques du dashboard
-    Route::get('/stats', [AdminController::class, 'getStats']);
-    
-    // Gestion des utilisateurs
-    Route::get('/users', [AdminController::class, 'getUsers']);
-    Route::put('/users/{id}', [AdminController::class, 'updateUser']);
-    Route::delete('/users/{id}', [AdminController::class, 'deleteUser']);
-    
-    // Gestion des compétences
-    Route::get('/competences', [AdminController::class, 'getCompetences']);
-    Route::post('/competences', [AdminController::class, 'createCompetence']);
-    Route::put('/competences/{id}', [AdminController::class, 'updateCompetence']);
-    Route::delete('/competences/{id}', [AdminController::class, 'deleteCompetence']);
-    
-    // Gestion des offres
-    Route::get('/offres', [AdminController::class, 'getOffres']);
-    Route::delete('/offres/{id}', [AdminController::class, 'deleteOffre']);
-    
-    // Paramètres de l'application
-    Route::get('/settings', [AdminController::class, 'getSettings']);
-    Route::put('/settings', [AdminController::class, 'updateSettings']);
-});
+
 // Routes qui nécessitent une authentification
 Route::middleware('auth:sanctum')->group(function () {
     // Routes d'authentification authentifiées
@@ -95,66 +70,45 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/conversations', [MessageController::class, 'createConversation']);
         Route::get('/conversations/{id}', [MessageController::class, 'getMessages']);
         Route::post('/conversations/{id}', [MessageController::class, 'sendMessage']);
+        Route::patch('/conversations/{id}/read', [MessageController::class, 'markAllAsRead']);
     });
-    Route::middleware('auth:sanctum')->get('/check-email-verified', function (Request $request) {
-        $user = $request->user();
-        
+
+    // Vérification de l'email
+    Route::get('/check-email-verified', function (Request $request) {
         return response()->json([
-            'user_id' => $user->id,
-            'email' => $user->email,
-            'email_verified_at' => $user->email_verified_at,
-            'email_verified_at_type' => gettype($user->email_verified_at),
-            'email_verified_at_class' => $user->email_verified_at ? get_class($user->email_verified_at) : null,
-            'is_null' => is_null($user->email_verified_at),
-            'cast_to_bool' => (bool)$user->email_verified_at,
-            'db_value_raw' => DB::table('users')->where('id', $user->id)->first()->email_verified_at,
-            'has_verified_email_method' => $user->hasVerifiedEmail(),
-            'is_string' => is_string($user->email_verified_at),
-            'email_verified_at_to_string' => $user->email_verified_at ? (string)$user->email_verified_at : null,
+            'email_verified' => !is_null($request->user()->email_verified_at)
         ]);
     });
+
     // Routes qui nécessitent une vérification d'email
-    Route::middleware('auth:sanctum')->group(function () {
-        Route::get('check-email-verified', function (Request $request) {
-            $user = $request->user();
-            return response()->json([
-                'email_verified' => true
-            ]);
-        Route::get('/etudiant/profile', [EtudiantController::class, 'getProfile']);
     
-            // Nouvelle route pour mettre à jour le profil étudiant
-        Route::post('/etudiant/profile', [EtudiantController::class, 'update']);
-            
-            // Route existante pour récupérer le profil entreprise
-        Route::get('/entreprise/profile', [EntrepriseController::class, 'getProfile']);
-            
-            // Nouvelle route pour mettre à jour le profil entreprise
-        Route::post('/entreprise/profile', [EntrepriseController::class, 'updateProfile']);
-        });
         // Routes pour les étudiants
         Route::prefix('etudiant')->group(function () {
             Route::get('/profile', [EtudiantController::class, 'getProfile']);
-            Route::put('/profile', [EtudiantController::class, 'updateProfile']);
+            Route::post('/profile', [EtudiantController::class, 'update']);
+            Route::post('/cv', [EtudiantController::class, 'uploadCV']);
             
             // Gestion des compétences
             Route::get('/competences', [EtudiantController::class, 'getCompetences']);
             Route::post('/competences', [EtudiantController::class, 'addCompetence']);
             Route::put('/competences/{id}', [EtudiantController::class, 'updateCompetence']);
             Route::delete('/competences/{id}', [EtudiantController::class, 'removeCompetence']);
-            Route::get('/competences/recommandees', [EtudiantController::class, 'getRecommendedSkills']);
+            Route::get('/competences/recommandees', [EtudiantController::class, 'getRecommendedCompetences']);
             
             // Gestion des candidatures et tests
             Route::get('/candidatures', [EtudiantController::class, 'getCandidatures']);
+            Route::get('/candidatures/{id}', [EtudiantController::class, 'getCandidatureDetails']);
             Route::get('/tests', [EtudiantController::class, 'getTests']);
-            // Offres recommandées
-            /*   */
-            Route::post('offres/{id}/postuler', [OffreController::class, 'postuler']);
+            
+            // Dashboard et statistiques
+            Route::get('/dashboard', [EtudiantController::class, 'getSummary']);
+            Route::get('/offres/recommandees', [EtudiantController::class, 'getRecommendedOffers']);
         });
 
         // Routes pour les entreprises
         Route::prefix('entreprise')->group(function () {
             Route::get('/profile', [EntrepriseController::class, 'getProfile']);
-            Route::put('/profile', [EntrepriseController::class, 'updateProfile']);
+            Route::post('/profile', [EntrepriseController::class, 'updateProfile']);
             
             // Gestion des offres et candidatures
             Route::get('/offres', [EntrepriseController::class, 'getOffres']);
@@ -179,9 +133,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('candidatures/{id}', [CandidatureController::class, 'show']);
         Route::put('candidatures/{id}', [CandidatureController::class, 'update']);
         Route::delete('candidatures/{id}', [CandidatureController::class, 'cancel']);
+        
+        // Gestion des entretiens
         Route::post('candidatures/{id}/entretien', [EntretienController::class, 'planifierEntretien']);
         Route::delete('candidatures/{id}/entretien', [EntretienController::class, 'annulerEntretien']);
         Route::post('candidatures/{id}/confirmer-presence', [EntretienController::class, 'confirmerPresence']);
+        Route::prefix('entretiens')->group(function () {
+            Route::get('/', [EntretienController::class, 'getEntretiens']);
+            Route::get('/summary', [EntretienController::class, 'getEntretiensSummary']);
+        });
 
         // Gestion des tests
         Route::get('tests/{id}', [TestController::class, 'show']);
@@ -191,16 +151,45 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('tests/{id}/submit', [TestController::class, 'submit']);
         Route::get('offres/{offre_id}/tests', [TestController::class, 'getTestsByOffre']);
         Route::get('tests/{id}/candidatures/{candidature_id}/results', [TestController::class, 'getResults']);
+    });
 
-        // Gestion des compétences (admin)
-        Route::middleware('admin')->group(function () {
-            Route::post('competences', [CompetenceController::class, 'store']);
-            Route::put('competences/{id}', [CompetenceController::class, 'update']);
-            Route::delete('competences/{id}', [CompetenceController::class, 'destroy']);
-        });
-    });
-    Route::prefix('entretiens')->group(function () {
-        Route::get('/', [EntretiensController::class, 'getEntretiens']);
-        Route::get('/summary', [EntretiensController::class, 'getEntretiensSummary']);
-    });
+
+// Routes Admin - Utilisation directe du middleware AdminMiddleware
+Route::middleware(['auth:sanctum', AdminMiddleware::class])->prefix('/admin')->group(function () {
+    Route::get('/dashboard', [\App\Http\Controllers\API\AdminController::class, 'getDashboardStats']);
+    
+    // Gestion des utilisateurs
+    Route::get('/users', [\App\Http\Controllers\API\AdminController::class, 'getUsers']);
+    Route::get('/users/{id}', [\App\Http\Controllers\API\AdminController::class, 'getUser']);
+    Route::post('/users', [\App\Http\Controllers\API\AdminController::class, 'createUser']);
+    Route::put('/users/{id}', [\App\Http\Controllers\API\AdminController::class, 'updateUser']);
+    Route::delete('/users/{id}', [\App\Http\Controllers\API\AdminController::class, 'deleteUser']);
+    
+    // Gestion des compétences
+    Route::get('/competences', [\App\Http\Controllers\API\AdminController::class, 'getCompetences']);
+    Route::get('/competences/{id}', [\App\Http\Controllers\API\AdminController::class, 'getCompetence']);
+    Route::post('/competences', [\App\Http\Controllers\API\AdminController::class, 'createCompetence']);
+    Route::put('/competences/{id}', [\App\Http\Controllers\API\AdminController::class, 'updateCompetence']);
+    Route::delete('/competences/{id}', [\App\Http\Controllers\API\AdminController::class, 'deleteCompetence']);
+    
+    // Gestion des offres
+    Route::get('/offres', [\App\Http\Controllers\API\AdminController::class, 'getOffres']);
+    Route::get('/offres/{id}', [\App\Http\Controllers\API\AdminController::class, 'getOffre']);
+    Route::put('/offres/{id}', [\App\Http\Controllers\API\AdminController::class, 'updateOffre']);
+    Route::delete('/offres/{id}', [\App\Http\Controllers\API\AdminController::class, 'deleteOffre']);
+    
+    // Gestion des candidatures
+    Route::get('/candidatures', [\App\Http\Controllers\API\AdminController::class, 'getCandidatures']);
+    Route::get('/candidatures/{id}', [\App\Http\Controllers\API\AdminController::class, 'getCandidature']);
+    
+    // Paramètres du système
+    Route::get('/settings', [\App\Http\Controllers\API\AdminController::class, 'getSettings']);
+    Route::put('/settings', [\App\Http\Controllers\API\AdminController::class, 'updateSettings']);
+    
+    // Gestion des logs et activités
+    Route::get('/logs', [\App\Http\Controllers\API\AdminController::class, 'getLogs']);
+    
+    // Fonctions de maintenance
+    Route::post('/maintenance-mode', [\App\Http\Controllers\API\AdminController::class, 'toggleMaintenanceMode']);
+    Route::post('/clear-cache', [\App\Http\Controllers\API\AdminController::class, 'clearCache']);
 });
