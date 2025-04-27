@@ -247,6 +247,20 @@ class EntrepriseController extends Controller
     /**
      * Obtenir les statistiques de recrutement
      */
+    public function downloadCV($filename)
+    {
+        $user = auth()->user();
+        Log::info("Tentative de téléchargement du CV : {$filename} par l'utilisateur {$user->id}");
+
+        $filePath = "{$filename}";
+        if (!$user->cv_file || !str_contains($user->cv_file, $filename) || !Storage::disk('public')->exists($filePath)) {
+            Log::warning("CV non trouvé : {$filePath}");
+            return response()->json(['message' => 'CV non trouvé'], 404);
+        }
+
+        Log::info("CV trouvé : {$filePath}");
+        return response()->download(storage_path("app/public/storage/{$filePath}"));
+    }
     public function getStatistiques()
     {
         $user = Auth::user();

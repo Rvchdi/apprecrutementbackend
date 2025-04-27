@@ -93,6 +93,19 @@ class AuthController extends Controller
         DB::beginTransaction();
 
         try {
+            $cvPath = null;
+            if ($request->hasFile('cv_file')) {
+                try {
+                    // Stocker le fichier CV dans le répertoire 'cv_files' du stockage public
+                    $cvPath = $request->file('cv_file')->store('cv_files', 'public');
+                } catch (\Exception $e) {
+                    Log::error('Erreur lors du téléchargement du fichier CV: ' . $e->getMessage());
+                    return response()->json([
+                        'message' => 'Erreur lors du téléchargement du fichier CV',
+                        'error' => $e->getMessage()
+                    ], 500);
+                }
+            }
             // Créer l'utilisateur
             $user = User::create([
                 'nom' => $request->nom,
@@ -101,6 +114,7 @@ class AuthController extends Controller
                 'password' => Hash::make($request->password),
                 'telephone' => $request->telephone,
                 'role' => $request->role,
+                'cv_file' => $cvPath,
                 'email_verified_at' => null,
             ]);
 
@@ -562,6 +576,7 @@ class AuthController extends Controller
             'message' => 'Mot de passe réinitialisé avec succès'
         ]);
     }
+    
     
     /**
      * Analyser le CV d'un étudiant avec l'IA

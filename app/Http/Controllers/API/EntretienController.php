@@ -137,67 +137,61 @@ class EntretienController extends Controller
         }
     }
     public function getEntretiens(Request $request)
-    {
-        $user = Auth::user();
-        $limit = $request->input('limit', 10);
+{
+    \Log::info('Récupération des entretiens', ['user_id' => Auth::id()]);
+    $user = Auth::user();
 
-        // Si l'utilisateur est un étudiant
-        if ($user->role === 'etudiant') {
-            $etudiant = $user->etudiant;
-            
-            if (!$etudiant) {
-                return response()->json([
-                    'message' => 'Profil étudiant non trouvé'
-                ], 404);
-            }
-            
-            // Récupérer les candidatures avec entretien
-            $entretiens = Candidature::with(['offre.entreprise'])
-                ->where('etudiant_id', $etudiant->id)
-                ->where('statut', 'entretien')
-                ->whereNotNull('date_entretien')
-                ->orderBy('date_entretien', 'asc')
-                ->limit($limit)
-                ->get();
-                
+    if ($user->role === 'etudiant') {
+        $etudiant = $user->etudiant;
+
+        if (!$etudiant) {
             return response()->json([
-                'entretiens' => $entretiens
-            ]);
+                'message' => 'Profil étudiant non trouvé'
+            ], 404);
         }
-        
-        // Si l'utilisateur est une entreprise
-        else if ($user->role === 'entreprise') {
-            $entreprise = $user->entreprise;
-            
-            if (!$entreprise) {
-                return response()->json([
-                    'message' => 'Profil entreprise non trouvé'
-                ], 404);
-            }
-            
-            // Récupérer les candidatures avec entretien pour les offres de cette entreprise
-            $entretiens = Candidature::with(['etudiant.user', 'offre'])
-                ->whereHas('offre', function($query) use ($entreprise) {
-                    $query->where('entreprise_id', $entreprise->id);
-                })
-                ->where('statut', 'entretien')
-                ->whereNotNull('date_entretien')
-                ->orderBy('date_entretien', 'asc')
-                ->limit($limit)
-                ->get();
-                
-            return response()->json([
-                'entretiens' => $entretiens
-            ]);
-        }
-        
-        // Si l'utilisateur est un admin (ou autre rôle)
-        else {
-            return response()->json([
-                'message' => 'Fonctionnalité non disponible pour ce type d\'utilisateur'
-            ], 403);
-        }
+
+        // Récupérer les entretiens pour l'étudiant
+        $entretiens = Candidature::with(['offre', 'offre.entreprise'])
+            ->where('etudiant_id', $etudiant->id)
+            ->where('statut', 'entretien')
+            ->whereNotNull('date_entretien')
+            ->orderBy('date_entretien', 'asc')
+            ->get();
+
+        return response()->json([
+            'entretiens' => $entretiens
+        ]);
     }
+
+    if ($user->role === 'entreprise') {
+        $entreprise = $user->entreprise;
+
+        if (!$entreprise) {
+            return response()->json([
+                'message' => 'Profil entreprise non trouvé'
+            ], 404);
+        }
+
+        // Récupérer les entretiens pour l'entreprise
+        $entretiens = Candidature::with(['etudiant.user', 'offre'])
+            ->whereHas('offre', function ($query) use ($entreprise) {
+                $query->where('entreprise_id', $entreprise->id);
+            })
+            ->where('statut', 'entretien')
+            ->whereNotNull('date_entretien')
+            ->orderBy('date_entretien', 'asc')
+            ->get();
+       
+        return response()->json([
+            'entretiens' => $entretiens
+        ]);
+        \Log::info('Entretiens récupérés', ['entretiens' => $entretiens]);
+    }
+
+    return response()->json([
+        'message' => 'Rôle utilisateur non pris en charge'
+    ], 403);
+}
     
     /**
      * Récupère un résumé des entretiens à venir
@@ -205,116 +199,128 @@ class EntretienController extends Controller
      * @return \Illuminate\Http\JsonResponse
      */
     public function getEntretiensSummary()
-    {
-        $user = Auth::user();
-        
-        // Si l'utilisateur est un étudiant
-        if ($user->role === 'etudiant') {
-            $etudiant = $user->etudiant;
-            
-            if (!$etudiant) {
-                return response()->json([
-                    'message' => 'Profil étudiant non trouvé'
-                ], 404);
-            }
-            
-            // Récupérer les candidatures avec entretien
-            $entretiens = Candidature::with(['offre.entreprise'])
-                ->where('etudiant_id', $etudiant->id)
-                ->where('statut', 'entretien')
-                ->whereNotNull('date_entretien')
-                ->where('date_entretien', '>=', now())
-                ->orderBy('date_entretien', 'asc')
-                ->limit(5)
-                ->get();
-                
-            // Compter les entretiens aujourd'hui
-            $entretienAujourdhui = Candidature::where('etudiant_id', $etudiant->id)
-                ->where('statut', 'entretien')
-                ->whereNotNull('date_entretien')
-                ->whereDate('date_entretien', now()->toDateString())
-                ->count();
-                
-            // Compter les entretiens cette semaine
-            $entretienCetteSemaine = Candidature::where('etudiant_id', $etudiant->id)
-                ->where('statut', 'entretien')
-                ->whereNotNull('date_entretien')
-                ->whereBetween('date_entretien', [
-                    now()->startOfWeek()->toDateString(),
-                    now()->endOfWeek()->toDateString()
-                ])
-                ->count();
-                
-            return response()->json([
-                'entretiens' => $entretiens,
-                'stats' => [
-                    'aujourdhui' => $entretienAujourdhui,
-                    'cette_semaine' => $entretienCetteSemaine,
-                    'total' => $entretiens->count()
-                ]
-            ]);
-        }
-        
-        // Si l'utilisateur est une entreprise
-        else if ($user->role === 'entreprise') {
-            $entreprise = $user->entreprise;
-            
-            if (!$entreprise) {
-                return response()->json([
-                    'message' => 'Profil entreprise non trouvé'
-                ], 404);
-            }
-            
-            // Récupérer les candidatures avec entretien pour les offres de cette entreprise
-            $entretiens = Candidature::with(['etudiant.user', 'offre'])
-                ->whereHas('offre', function($query) use ($entreprise) {
-                    $query->where('entreprise_id', $entreprise->id);
-                })
-                ->where('statut', 'entretien')
-                ->whereNotNull('date_entretien')
-                ->where('date_entretien', '>=', now())
-                ->orderBy('date_entretien', 'asc')
-                ->limit(5)
-                ->get();
-                
-            // Compter les entretiens aujourd'hui
-            $entretienAujourdhui = Candidature::whereHas('offre', function($query) use ($entreprise) {
-                    $query->where('entreprise_id', $entreprise->id);
-                })
-                ->where('statut', 'entretien')
-                ->whereNotNull('date_entretien')
-                ->whereDate('date_entretien', now()->toDateString())
-                ->count();
-                
-            // Compter les entretiens cette semaine
-            $entretienCetteSemaine = Candidature::whereHas('offre', function($query) use ($entreprise) {
-                    $query->where('entreprise_id', $entreprise->id);
-                })
-                ->where('statut', 'entretien')
-                ->whereNotNull('date_entretien')
-                ->whereBetween('date_entretien', [
-                    now()->startOfWeek()->toDateString(),
-                    now()->endOfWeek()->toDateString()
-                ])
-                ->count();
-                
-            return response()->json([
-                'entretiens' => $entretiens,
-                'stats' => [
-                    'aujourdhui' => $entretienAujourdhui,
-                    'cette_semaine' => $entretienCetteSemaine,
-                    'total' => $entretiens->count()
-                ]
-            ]);
-        }
-        
-        // Si l'utilisateur est un admin (ou autre rôle)
-        else {
-            return response()->json([
-                'message' => 'Fonctionnalité non disponible pour ce type d\'utilisateur'
-            ], 403);
-        }
+{
+    $user = Auth::user();
+
+    // Vérifier si l'utilisateur est authentifié
+    if (!$user) {
+        return response()->json([
+            'message' => 'Non authentifié'
+        ], 401);
     }
+
+    // Vérifier si l'utilisateur a le rôle étudiant ou entreprise
+    if (!in_array($user->role, ['etudiant', 'entreprise'])) {
+        return response()->json([
+            'message' => 'Accès non autorisé pour ce rôle'
+        ], 403);
+    }
+
+    // Si l'utilisateur est un étudiant
+    if ($user->role === 'etudiant') {
+        $etudiant = $user->etudiant;
+
+        if (!$etudiant) {
+            return response()->json([
+                'message' => 'Profil étudiant non trouvé'
+            ], 404);
+        }
+
+        // Récupérer les candidatures avec entretien
+        $entretiens = Candidature::with(['offre.entreprise'])
+            ->where('etudiant_id', $etudiant->id)
+            ->where('statut', 'entretien')
+            ->whereNotNull('date_entretien')
+            ->where('date_entretien', '>=', now())
+            ->orderBy('date_entretien', 'asc')
+            ->limit(5)
+            ->get();
+
+        // Compter les entretiens aujourd'hui
+        $entretienAujourdhui = Candidature::where('etudiant_id', $etudiant->id)
+            ->where('statut', 'entretien')
+            ->whereNotNull('date_entretien')
+            ->whereDate('date_entretien', now()->toDateString())
+            ->count();
+
+        // Compter les entretiens cette semaine
+        $entretienCetteSemaine = Candidature::where('etudiant_id', $etudiant->id)
+            ->where('statut', 'entretien')
+            ->whereNotNull('date_entretien')
+            ->whereBetween('date_entretien', [
+                now()->startOfWeek()->toDateString(),
+                now()->endOfWeek()->toDateString()
+            ])
+            ->count();
+
+        return response()->json([
+            'entretiens' => $entretiens,
+            'stats' => [
+                'aujourdhui' => $entretienAujourdhui,
+                'cette_semaine' => $entretienCetteSemaine,
+                'total' => $entretiens->count()
+            ]
+        ]);
+    }
+
+    // Si l'utilisateur est une entreprise
+    if ($user->role === 'entreprise') {
+        $entreprise = $user->entreprise;
+
+        if (!$entreprise) {
+            return response()->json([
+                'message' => 'Profil entreprise non trouvé'
+            ], 404);
+        }
+
+        // Récupérer les candidatures avec entretien pour les offres de cette entreprise
+        $entretiens = Candidature::with(['etudiant.user', 'offre'])
+            ->whereHas('offre', function ($query) use ($entreprise) {
+                $query->where('entreprise_id', $entreprise->id);
+            })
+            ->where('statut', 'entretien')
+            ->whereNotNull('date_entretien')
+            ->where('date_entretien', '>=', now())
+            ->orderBy('date_entretien', 'asc')
+            ->limit(5)
+            ->get();
+
+        // Compter les entretiens aujourd'hui
+        $entretienAujourdhui = Candidature::whereHas('offre', function ($query) use ($entreprise) {
+                $query->where('entreprise_id', $entreprise->id);
+            })
+            ->where('statut', 'entretien')
+            ->whereNotNull('date_entretien')
+            ->whereDate('date_entretien', now()->toDateString())
+            ->count();
+
+        // Compter les entretiens cette semaine
+        $entretienCetteSemaine = Candidature::whereHas('offre', function ($query) use ($entreprise) {
+                $query->where('entreprise_id', $entreprise->id);
+            })
+            ->where('statut', 'entretien')
+            ->whereNotNull('date_entretien')
+            ->whereBetween('date_entretien', [
+                now()->startOfWeek()->toDateString(),
+                now()->endOfWeek()->toDateString()
+            ])
+            ->count();
+
+        return response()->json([
+            'entretiens' => $entretiens,
+            'stats' => [
+                'aujourdhui' => $entretienAujourdhui,
+                'cette_semaine' => $entretienCetteSemaine,
+                'total' => $entretiens->count()
+            ]
+        ]);
+    }
+
+    // Si l'utilisateur a un autre rôle
+    return response()->json([
+        'message' => 'Fonctionnalité non disponible pour ce type d\'utilisateur'
+    ], 403);
+}
 
    
 }

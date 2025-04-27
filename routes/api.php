@@ -110,7 +110,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::prefix('entreprise')->group(function () {
             Route::get('/profile', [EntrepriseController::class, 'getProfile']);
             Route::post('/profile', [EntrepriseController::class, 'updateProfile']);
-            
+            Route::get('/user/cv/{filename}', [EntrepriseController::class, 'downloadCV']);
             // Gestion des offres et candidatures
             Route::get('/offres', [EntrepriseController::class, 'getOffres']);
             Route::get('/candidatures', [EntrepriseController::class, 'getCandidatures']);
