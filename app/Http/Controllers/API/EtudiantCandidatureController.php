@@ -149,86 +149,135 @@ class EtudiantCandidatureController extends Controller
      */
     public function applyToOffer(Request $request, $offre_id)
     {
-        // Vérifier l'accès
-        $accessCheck = $this->checkEtudiantAccess();
-        if ($accessCheck) return $accessCheck;
-        
-        $validator = Validator::make($request->all(), [
-            'lettre_motivation' => 'required|string|min:100',
+     //Vérification de la réception des données     
+    if (!$request->has('lettre_motivation')) {
+        return response()->json([
+            'message' => 'Données manquantes'
+        ], 422);
+    }
+    // Ajouter des logs
+    \Log::info('Tentative de candidature', [
+        'user_id' => Auth::id(),
+        'offre_id' => $offre_id,
+        'request_data' => $request->all()
+    ]);
+    
+    // Vérifier l'accès
+    $accessCheck = $this->checkEtudiantAccess();
+    if ($accessCheck) {
+        \Log::error('Échec de vérification d\'accès', [
+            'response' => $accessCheck->getContent()
+        ]);
+        return $accessCheck;
+    }
+    
+    $validator = Validator::make($request->all(), [
+        'lettre_motivation' => 'required|string|min:100',
+    ]);
+    
+    if ($validator->fails()) {
+        \Log::error('Échec de validation', [
+            'errors' => $validator->errors()->toArray()
+        ]);
+        return response()->json([
+            'message' => 'Données invalides',
+            'errors' => $validator->errors()
+        ], 422);
+    }
+    
+    $etudiant = $this->getAuthEtudiant();
+    
+    // Vérifier si l'offre existe et est active
+    $offre = Offre::where('statut', 'active')->find($offre_id);
+    
+    if (!$offre) {
+        \Log::error('Offre non trouvée ou inactive', [
+            'offre_id' => $offre_id
+        ]);
+        return response()->json([
+            'message' => 'Offre non trouvée ou inactive'
+        ], 404);
+    }
+    
+    // Vérifier que l'étudiant n'a pas déjà postulé
+    if ($etudiant->candidatures()->where('offre_id', $offre_id)->exists()) {
+        \Log::error('Candidature déjà existante', [
+            'etudiant_id' => $etudiant->id,
+            'offre_id' => $offre_id
+        ]);
+        return response()->json([
+            'message' => 'Vous avez déjà postulé à cette offre'
+        ], 422);
+    }
+    
+    // Vérifier que le CV de l'étudiant est bien renseigné
+    if (empty($etudiant->cv_file)) {
+        \Log::error('CV manquant', [
+            'etudiant_id' => $etudiant->id
+        ]);
+        return response()->json([
+            'message' => 'Vous devez télécharger votre CV avant de postuler',
+            'code' => 'CV_REQUIRED'
+        ], 422);
+    }
+    
+    try {
+        \Log::info('Début de la transaction DB pour candidature');
+        DB::beginTransaction();
+        $testId = null;
+        if ($offre->test_requis) {
+            $test = $offre->test()->first();
+            $testId = $test ? $test->id : null;
+        }
+        // Créer la candidature
+        $candidature = Candidature::create([
+            'etudiant_id' => $etudiant->id,
+            'offre_id' => $offre_id,
+            'lettre_motivation' => $request->lettre_motivation,
+            'statut' => 'en_attente',
+            'test_complete' => false,
+            'date_candidature' => now()
         ]);
         
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Données invalides',
-                'errors' => $validator->errors()
-            ], 422);
-        }
+        \Log::info('Candidature créée', [
+            'candidature_id' => $candidature->id
+        ]);
         
-        $etudiant = $this->getAuthEtudiant();
+        // Créer une notification pour l'entreprise
+        $notification = new Notification([
+            'user_id' => $offre->entreprise->user_id,
+            'titre' => 'Nouvelle candidature',
+            'contenu' => "L'étudiant {$etudiant->user->prenom} {$etudiant->user->nom} a postulé à votre offre : {$offre->titre}",
+            'type' => 'candidature',
+            'lu' => false
+        ]);
+        $notification->save();
         
-        // Vérifier si l'offre existe et est active
-        $offre = Offre::where('statut', 'active')->find($offre_id);
+        \Log::info('Notification créée pour l\'entreprise');
         
-        if (!$offre) {
-            return response()->json([
-                'message' => 'Offre non trouvée ou inactive'
-            ], 404);
-        }
+        DB::commit();
+        \Log::info('Transaction DB réussie pour la candidature');
         
-        // Vérifier que l'étudiant n'a pas déjà postulé
-        if ($etudiant->candidatures()->where('offre_id', $offre_id)->exists()) {
-            return response()->json([
-                'message' => 'Vous avez déjà postulé à cette offre'
-            ], 422);
-        }
+        return response()->json([
+            'message' => 'Candidature envoyée avec succès',
+            'candidature' => $candidature,
+            'test_required' => $offre->test_requis,
+            'test_id' => $testId
+        ], 201);
         
-        // Vérifier que le CV de l'étudiant est bien renseigné
-        if (empty($etudiant->cv_file)) {
-            return response()->json([
-                'message' => 'Vous devez télécharger votre CV avant de postuler',
-                'code' => 'CV_REQUIRED'
-            ], 422);
-        }
+    } catch (\Exception $e) {
+        DB::rollBack();
         
-        try {
-            DB::beginTransaction();
-            
-            // Créer la candidature
-            $candidature = Candidature::create([
-                'etudiant_id' => $etudiant->id,
-                'offre_id' => $offre_id,
-                'lettre_motivation' => $request->lettre_motivation,
-                'statut' => 'en_attente',
-                'test_complete' => false,
-                'date_candidature' => now()
-            ]);
-            
-            // Créer une notification pour l'entreprise
-            $notification = new Notification([
-                'user_id' => $offre->entreprise->user_id,
-                'titre' => 'Nouvelle candidature',
-                'contenu' => "L'étudiant {$etudiant->user->prenom} {$etudiant->user->nom} a postulé à votre offre : {$offre->titre}",
-                'type' => 'candidature',
-                'lu' => false
-            ]);
-            $notification->save();
-            
-            DB::commit();
-            
-            return response()->json([
-                'message' => 'Candidature envoyée avec succès',
-                'candidature' => $candidature,
-                'test_required' => $offre->test_requis
-            ], 201);
-            
-        } catch (\Exception $e) {
-            DB::rollBack();
-            
-            return response()->json([
-                'message' => 'Une erreur est survenue lors de l\'envoi de la candidature',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        \Log::error('Erreur lors de l\'envoi de la candidature', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+        
+        return response()->json([
+            'message' => 'Une erreur est survenue lors de l\'envoi de la candidature',
+            'error' => $e->getMessage()
+        ], 500);
+    }
     }
     
     /**

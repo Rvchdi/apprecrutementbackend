@@ -147,7 +147,6 @@ class EtudiantController extends Controller
         $etudiantId = $user->etudiant->id;
         
         // Utiliser le cache pour le profil
-        return Cache::remember("etudiant.{$etudiantId}.profile", self::CACHE_DURATION, function () use ($user) {
             $etudiant = $user->etudiant()->with('competences')->first();
             
             // Préparer l'URL pour le CV si présent
@@ -165,7 +164,7 @@ class EtudiantController extends Controller
                 ],
                 'etudiant' => $etudiant
             ]);
-        });
+        
     }
     
     /**

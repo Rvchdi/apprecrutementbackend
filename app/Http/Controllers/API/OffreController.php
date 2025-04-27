@@ -27,11 +27,8 @@ class OffreController extends Controller
      */
     public function index(Request $request)
     {
-        // Générer une clé de cache unique basée sur les paramètres de requête
-        $cacheKey = $this->generateCacheKey('offres_list', $request->all());
-
+        
         // Récupérer les offres depuis le cache si possible
-        return Cache::remember($cacheKey, now()->addMinutes(self::CACHE_DURATION), function () use ($request) {
             $query = Offre::with(['entreprise.user', 'competences'])
                 ->where('statut', 'active');
 
@@ -82,7 +79,6 @@ class OffreController extends Controller
                 'offres' => $offres,
                 'message' => 'Offres récupérées avec succès'
             ]);
-        });
     }
 
     /**
@@ -90,9 +86,7 @@ class OffreController extends Controller
      */
     public function show($id)
     {
-        $cacheKey = "offre_{$id}_details";
 
-        return Cache::remember($cacheKey, now()->addMinutes(self::CACHE_DURATION), function () use ($id) {
             $offre = Offre::with(['entreprise.user', 'competences', 'test.questions.reponses'])->findOrFail($id);
             
             // Incrémenter le compteur de vues de manière atomique
@@ -138,8 +132,7 @@ class OffreController extends Controller
                 'similar_offres' => $similarOffres,
                 'candidature_status' => $candidatureStatus,
                 'saved' => $saved
-            ]);
-        });
+            ]);;
     }
 
     /**

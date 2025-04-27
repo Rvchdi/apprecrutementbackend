@@ -9,6 +9,7 @@ use App\Http\Controllers\API\EntretienController;
 use App\Http\Controllers\API\OffreController;
 use App\Http\Controllers\API\CandidatureController;
 use App\Http\Controllers\API\CompetenceController;
+use App\Http\Controllers\API\EtudiantCandidatureController;
 use App\Http\Controllers\API\TestController;
 use App\Http\Controllers\API\NotificationController;
 use App\Http\Controllers\API\MessageController;
@@ -125,7 +126,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('offres/{id}', [OffreController::class, 'destroy']); // Suppression d'offre (entreprise)
         
         // Actions sur les offres
-        Route::post('offres/{id}/postuler', [OffreController::class, 'postuler']); // Postuler (étudiant)
+        Route::post('offres/{offre_id}/postuler', [EtudiantCandidatureController::class, 'applyToOffer'])->middleware('auth:sanctum');
+         // Postuler (étudiant)
         Route::post('offres/{id}/save', [OffreController::class, 'saveOffre']); // Sauvegarder (étudiant)
         Route::delete('offres/{id}/save', [OffreController::class, 'unsaveOffre']); // Retirer des favoris (étudiant)
 

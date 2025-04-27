@@ -29,7 +29,7 @@ class AdminController extends Controller
     public function getDashboardStats()
     {
         // Utilisation du cache pour optimiser les performances
-        $stats = Cache::remember('admin.dashboard.stats', now()->addMinutes(15), function () {
+      
             $usersCount = User::count();
             $studentsCount = User::where('role', 'etudiant')->count();
             $companiesCount = User::where('role', 'entreprise')->count();
@@ -67,7 +67,7 @@ class AdminController extends Controller
                     'popular' => $popularCompetences
                 ],
             ];
-        });
+        
     
         return response()->json($stats);
     }

@@ -22,9 +22,7 @@ class CompetenceController extends Controller
      */
     public function index(Request $request)
 {
-    $cacheKey = 'competences_' . md5(json_encode($request->all()));
     
-    return Cache::remember($cacheKey, now()->addHours(24), function () use ($request) {
         $query = Competence::query();
         
         // Recherche par nom
@@ -53,7 +51,6 @@ class CompetenceController extends Controller
         return response()->json([
             'competences' => $competences
         ]);
-    });
 }
     
     /**
