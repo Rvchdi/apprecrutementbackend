@@ -12,6 +12,7 @@
         "laravel/tinker": "^2.10.1",
         "mailgun/mailgun-php": "^4.3",
         "nyholm/psr7": "^1.8",
+        "smalot/pdfparser": "^2.12",
         "symfony/http-client": "^7.2"
     },
     "require-dev": {

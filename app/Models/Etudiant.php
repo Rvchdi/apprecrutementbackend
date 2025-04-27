@@ -83,4 +83,8 @@ class Etudiant extends Model
         return $this->belongsToMany(Offre::class, 'etudiant_offres_sauvegardees')
             ->withTimestamps();
     }
+    public function cvResume()
+    {
+        return $this->hasOne(CvResume::class);
+    }
 }

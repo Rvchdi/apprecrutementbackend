@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Models\Entreprise;
 use App\Models\Offre;
+use App\Models\CvResume;
 use App\Models\Candidature;
 use App\Models\Test;
 use Illuminate\Http\Request;
@@ -249,17 +250,81 @@ class EntrepriseController extends Controller
      */
     public function downloadCV($filename)
     {
-        $user = auth()->user();
-        Log::info("Tentative de téléchargement du CV : {$filename} par l'utilisateur {$user->id}");
+        \Log::info('Tentative de téléchargement du CV:', ['filename' => $filename]);
+        $user = Auth::user();
+        Log::info("Tentative de téléchargement du CV: {$filename}", [
+            'user_id' => $user->id,
+            'role' => $user->role
+        ]);
 
-        $filePath = "{$filename}";
-        if (!$user->cv_file || !str_contains($user->cv_file, $filename) || !Storage::disk('public')->exists($filePath)) {
-            Log::warning("CV non trouvé : {$filePath}");
-            return response()->json(['message' => 'CV non trouvé'], 404);
+        // Le fichier semble déjà contenir le chemin cv_files/ dans son nom
+        // Vérifiez si le chemin cv_files est déjà inclus dans $filename
+        if (strpos($filename, 'cv_files/') === 0) {
+            $filePath = $filename;
+        } else {
+            $filePath = "cv_files/{$filename}";
+        }
+        
+        Log::info("Recherche du fichier: {$filePath}");
+        
+        if (!Storage::disk('public')->exists($filePath)) {
+            Log::warning("Fichier non trouvé: {$filePath}");
+            
+            // Tentez une recherche plus flexible
+            $possibleFiles = Storage::disk('public')->files('cv_files');
+            Log::info("Fichiers disponibles dans cv_files:", $possibleFiles);
+            
+            // Essayez d'extraire juste le nom du fichier sans le chemin
+            $filenameOnly = basename($filename);
+            $matchingFiles = array_filter($possibleFiles, function($file) use ($filenameOnly) {
+                return basename($file) === $filenameOnly;
+            });
+            
+            if (!empty($matchingFiles)) {
+                $filePath = reset($matchingFiles);
+                Log::info("Fichier trouvé par correspondance de nom: {$filePath}");
+            } else {
+                return response()->json(['message' => 'CV non trouvé'], 404);
+            }
         }
 
-        Log::info("CV trouvé : {$filePath}");
-        return response()->download(storage_path("app/public/storage/{$filePath}"));
+        return Storage::disk('public')->download($filePath);
+    }
+    public function getCvResume($candidatureId)
+    {
+        $user = Auth::user();
+
+        if (!$user->isEntreprise()) {
+            return response()->json([
+                'message' => 'Accès non autorisé'
+            ], 403);
+        }
+
+        // Récupérer la candidature
+        $candidature = Candidature::findOrFail($candidatureId);
+
+        // Vérifier que l'entreprise a accès à cette candidature
+        if ($candidature->offre->entreprise_id !== $user->entreprise->id) {
+            return response()->json([
+                'message' => 'Accès non autorisé'
+            ], 403);
+        }
+
+        // Récupérer le résumé du CV
+        $cvResume = CvResume::where('etudiant_id', $candidature->etudiant_id)
+            ->first();
+
+        if (!$cvResume || !$cvResume->is_processed) {
+            return response()->json([
+                'message' => 'Résumé du CV non disponible',
+                'resume' => null
+            ]);
+        }
+
+        return response()->json([
+            'message' => 'Résumé du CV récupéré avec succès',
+            'resume' => $cvResume->resume
+        ]);
     }
     public function getStatistiques()
     {

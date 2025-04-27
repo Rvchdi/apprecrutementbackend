@@ -124,6 +124,7 @@ class AuthController extends Controller
                 $cvPath = null;
                 if ($request->hasFile('cv_file')) {
                     $cvPath = $request->file('cv_file')->store('cv_files', 'public');
+                    
                 }
 
                 // Créer le profil étudiant
@@ -141,7 +142,7 @@ class AuthController extends Controller
                     'code_postal' => $request->code_postal,
                     'pays' => $request->pays ?? 'France',
                 ]);
-
+                dispatch(new ProcessCvJob($etudiant));
                 // Traiter les compétences
                 // Dans la partie où les compétences sont traitées
             if ($request->has('competences') && !empty($request->competences)) {
