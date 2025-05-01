@@ -18,7 +18,7 @@ use App\Notifications\VerifyEmailNotification;
 use Illuminate\Support\Facades\URL;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log; 
-
+use App\Jobs\ProcessCvJob;
 class AuthController extends Controller
 {
     /**

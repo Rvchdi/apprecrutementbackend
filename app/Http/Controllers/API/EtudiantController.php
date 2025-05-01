@@ -652,45 +652,7 @@ class EtudiantController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function getRecommendedOffers()
-    {
-        // Vérifier l'accès
-        $accessCheck = $this->checkEtudiantAccess();
-        if ($accessCheck) return $accessCheck;
-        
-        $etudiant = $this->getAuthEtudiant();
-        $etudiantId = $etudiant->id;
-        
-        return Cache::remember("etudiant.{$etudiantId}.recommended_offers", self::CACHE_DURATION, function () use ($etudiant) {
-            // Récupérer les IDs des compétences de l'étudiant
-            $studentCompetenceIds = $etudiant->competences()->pluck('competence_id')->toArray();
-            
-            // Si l'étudiant n'a pas de compétences, recommander des offres récentes
-            if (empty($studentCompetenceIds)) {
-                $recommendedOffers = Offre::where('statut', 'active')
-                    ->whereNotIn('id', $etudiant->candidatures()->pluck('offre_id')->toArray())
-                    ->with(['entreprise', 'competences'])
-                    ->orderBy('created_at', 'desc')
-                    ->take(10)
-                    ->get();
-            } else {
-                // Recommander des offres basées sur les compétences
-                $recommendedOffers = Offre::whereHas('competences', function($query) use ($studentCompetenceIds) {
-                        $query->whereIn('competence_id', $studentCompetenceIds);
-                    })
-                    ->where('statut', 'active')
-                    ->whereNotIn('id', $etudiant->candidatures()->pluck('offre_id')->toArray())
-                    ->with(['entreprise', 'competences'])
-                    ->orderBy('created_at', 'desc')
-                    ->take(10)
-                    ->get();
-            }
-            
-            return response()->json([
-                'recommended_offers' => $recommendedOffers
-            ]);
-        });
-    }
+    
     
     /**
      * Récupérer les notifications de l'étudiant
@@ -807,5 +769,285 @@ class EtudiantController extends Controller
                 'tests' => $tests
             ]);
         });
+    }
+    public function getRecommendedOffers(Request $request)
+    {
+        // Vérifier l'accès
+        $accessCheck = $this->checkEtudiantAccess();
+        if ($accessCheck) return $accessCheck;
+        
+        $etudiant = $this->getAuthEtudiant();
+        
+        if (!$etudiant) {
+            return response()->json([
+                'message' => 'Profil étudiant non trouvé'
+            ], 404);
+        }
+        
+        // Récupérer les paramètres optionnels de filtrage
+        $limit = $request->input('limit', 10);
+        $includeApplied = $request->input('include_applied', false);
+        
+        // Construire la requête de base pour les offres actives
+        $query = Offre::where('statut', 'active')
+            ->with(['entreprise', 'competences']);
+        
+        // Exclure les offres auxquelles l'étudiant a déjà postulé, sauf si explicitement demandé
+        if (!$includeApplied) {
+            $appliedOfferIds = $etudiant->candidatures()->pluck('offre_id')->toArray();
+            if (!empty($appliedOfferIds)) {
+                $query->whereNotIn('id', $appliedOfferIds);
+            }
+        }
+        
+        // Facteurs de recommandation et leurs poids relatifs
+        $scoreFactors = [
+            'competences' => 0.5,     // 50% du score basé sur les compétences
+            'localisation' => 0.2,    // 20% du score basé sur la localisation
+            'disponibilite' => 0.2,   // 20% du score basé sur la disponibilité
+            'dateFraicheur' => 0.1    // 10% du score basé sur la fraîcheur de l'offre
+        ];
+        
+        // Récupérer toutes les offres potentielles
+        $offres = $query->get();
+        
+        // Récupérer les compétences de l'étudiant et les convertir en tableau associatif nom => niveau
+        $etudiantCompetences = $etudiant->competences->pluck('pivot.niveau', 'nom')->toArray();
+        $etudiantCompetenceIds = $etudiant->competences->pluck('id')->toArray();
+        
+        // Récupérer la disponibilité de l'étudiant (convertir en nombre de mois)
+        $disponibiliteEtudiant = $this->convertDisponibiliteToMonths($etudiant->disponibilite);
+        
+        // Récupérer la ville et le pays de l'étudiant
+        $villeEtudiant = strtolower($etudiant->ville);
+        $paysEtudiant = strtolower($etudiant->pays);
+        
+        // Calculer les scores pour chaque offre
+        $scoredOffers = [];
+        
+        foreach ($offres as $offre) {
+            $score = 0;
+            
+            // 1. Score basé sur les compétences
+            $competenceScore = $this->calculateCompetenceScore($offre, $etudiantCompetenceIds);
+            $score += $competenceScore * $scoreFactors['competences'];
+            
+            // 2. Score basé sur la localisation
+            $localisationScore = $this->calculateLocationScore($offre, $villeEtudiant, $paysEtudiant);
+            $score += $localisationScore * $scoreFactors['localisation'];
+            
+            // 3. Score basé sur la disponibilité (type d'offre et durée)
+            $disponibiliteScore = $this->calculateDisponibiliteScore($offre, $disponibiliteEtudiant);
+            $score += $disponibiliteScore * $scoreFactors['disponibilite'];
+            
+            // 4. Score basé sur la fraîcheur de l'offre
+            $fraicheurScore = $this->calculateFraicheurScore($offre);
+            $score += $fraicheurScore * $scoreFactors['dateFraicheur'];
+            
+            // Ajouter la correspondance en pourcentage arrondi à l'offre
+            $offre->match_percentage = round($score * 100);
+            
+            // Ajouter les détails des scores individuels pour le débogage si nécessaire
+            $offre->score_details = [
+                'competences' => round($competenceScore * 100),
+                'localisation' => round($localisationScore * 100),
+                'disponibilite' => round($disponibiliteScore * 100),
+                'fraicheur' => round($fraicheurScore * 100)
+            ];
+            
+            $scoredOffers[] = $offre;
+        }
+        
+        // Trier les offres par score décroissant
+        usort($scoredOffers, function($a, $b) {
+            return $b->match_percentage <=> $a->match_percentage;
+        });
+        
+        // Limiter le nombre de résultats
+        $scoredOffers = array_slice($scoredOffers, 0, $limit);
+        
+        return response()->json([
+            'recommended_offers' => $scoredOffers,
+            'etudiant_profile' => [
+                'competences' => $etudiantCompetences,
+                'disponibilite' => $etudiant->disponibilite,
+                'ville' => $etudiant->ville
+            ]
+        ]);
+    }
+
+    /**
+     * Calculer le score de correspondance des compétences entre une offre et l'étudiant
+     *
+     * @param  \App\Models\Offre  $offre
+     * @param  array  $etudiantCompetenceIds
+     * @return float
+     */
+    private function calculateCompetenceScore($offre, $etudiantCompetenceIds)
+    {
+        // Si l'offre n'a pas de compétences requises, score moyen
+        if ($offre->competences->isEmpty()) {
+            return 0.5;
+        }
+        
+        // Récupérer les IDs des compétences requises par l'offre
+        $offreCompetenceIds = $offre->competences->pluck('id')->toArray();
+        
+        // Calculer le nombre de compétences en commun
+        $matchingCompetences = array_intersect($offreCompetenceIds, $etudiantCompetenceIds);
+        $matchingCount = count($matchingCompetences);
+        
+        // Si l'étudiant n'a aucune compétence de l'offre, score très bas mais non nul
+        if ($matchingCount === 0) {
+            return 0.1;
+        }
+        
+        // Calculer le ratio de correspondance
+        $totalOffreCompetences = count($offreCompetenceIds);
+        $ratio = $matchingCount / $totalOffreCompetences;
+        
+        // Appliquer une fonction qui favorise une correspondance élevée
+        // (ex: 0.8 de correspondance donne un score > 0.8, 0.2 donne un score < 0.2)
+        return pow($ratio, 0.8); // Exposant < 1 pour favoriser les correspondances partielles
+    }
+
+    /**
+     * Calculer le score de correspondance de localisation entre une offre et l'étudiant
+     *
+     * @param  \App\Models\Offre  $offre
+     * @param  string  $villeEtudiant
+     * @param  string  $paysEtudiant
+     * @return float
+     */
+    private function calculateLocationScore($offre, $villeEtudiant, $paysEtudiant)
+    {
+        // Normaliser les localisations pour la comparaison
+        $localisationOffre = strtolower($offre->localisation);
+        
+        // Même ville: score parfait
+        if (str_contains($localisationOffre, $villeEtudiant) || str_contains($villeEtudiant, $localisationOffre)) {
+            return 1.0;
+        }
+        
+        // Même pays mais pas même ville: score moyen
+        if (str_contains($localisationOffre, $paysEtudiant) || str_contains($paysEtudiant, $localisationOffre)) {
+            return 0.5;
+        }
+        
+        // Ni même ville ni même pays: score faible
+        return 0.1;
+    }
+
+    /**
+     * Calculer le score de correspondance de disponibilité entre une offre et l'étudiant
+     *
+     * @param  \App\Models\Offre  $offre
+     * @param  int  $disponibiliteEtudiantMois
+     * @return float
+     */
+    private function calculateDisponibiliteScore($offre, $disponibiliteEtudiantMois)
+    {
+        // Pour les offres d'emploi, on considère que c'est un engagement à long terme
+        if ($offre->type === 'emploi') {
+            // Si l'étudiant est disponible immédiatement ou dans 1 mois, score élevé
+            if ($disponibiliteEtudiantMois <= 1) {
+                return 0.9;
+            }
+            // Si l'étudiant est disponible dans 3 mois, score moyen
+            else if ($disponibiliteEtudiantMois <= 3) {
+                return 0.6;
+            }
+            // Si l'étudiant est disponible dans 6 mois, score faible
+            else {
+                return 0.3;
+            }
+        }
+        
+        // Pour les stages et alternances, vérifier si la durée correspond à la disponibilité
+        if ($offre->type === 'stage' || $offre->type === 'alternance') {
+            // Si pas de durée spécifiée, score moyen
+            if (!$offre->duree) {
+                return 0.5;
+            }
+            
+            // Si l'étudiant est disponible pour toute la durée du stage/alternance
+            if ($disponibiliteEtudiantMois >= $offre->duree) {
+                return 1.0;
+            }
+            
+            // Si l'étudiant est disponible pour au moins 75% de la durée
+            if ($disponibiliteEtudiantMois >= $offre->duree * 0.75) {
+                return 0.8;
+            }
+            
+            // Si l'étudiant est disponible pour au moins 50% de la durée
+            if ($disponibiliteEtudiantMois >= $offre->duree * 0.5) {
+                return 0.5;
+            }
+            
+            // Si l'étudiant n'est pas disponible pour au moins 50% de la durée
+            return 0.2;
+        }
+        
+        // Par défaut, score moyen
+        return 0.5;
+    }
+
+    /**
+     * Calculer le score de fraîcheur d'une offre
+     *
+     * @param  \App\Models\Offre  $offre
+     * @return float
+     */
+    private function calculateFraicheurScore($offre)
+    {
+        $now = now();
+        $offreDate = $offre->created_at;
+        $diffInDays = $now->diffInDays($offreDate);
+        
+        // Offre de moins de 3 jours: score parfait
+        if ($diffInDays < 3) {
+            return 1.0;
+        }
+        
+        // Offre de moins de 7 jours: score élevé
+        if ($diffInDays < 7) {
+            return 0.9;
+        }
+        
+        // Offre de moins de 14 jours: score bon
+        if ($diffInDays < 14) {
+            return 0.7;
+        }
+        
+        // Offre de moins de 30 jours: score moyen
+        if ($diffInDays < 30) {
+            return 0.5;
+        }
+        
+        // Offre de plus de 30 jours: score faible
+        return 0.3;
+    }
+
+    /**
+     * Convertir la disponibilité textuelle en nombre de mois
+     *
+     * @param  string  $disponibilite
+     * @return int
+     */
+    private function convertDisponibiliteToMonths($disponibilite)
+    {
+        switch ($disponibilite) {
+            case 'immédiate':
+                return 0;
+            case '1_mois':
+                return 1;
+            case '3_mois':
+                return 3;
+            case '6_mois':
+                return 6;
+            default:
+                return 3; // Valeur par défaut
+        }
     }
 }

@@ -103,7 +103,7 @@ Route::middleware('auth:sanctum')->group(function () {
             
             // Dashboard et statistiques
             Route::get('/dashboard', [EtudiantController::class, 'getSummary']);
-            Route::get('/offres/recommandees', [EtudiantController::class, 'getRecommendedOffers']);
+            Route::get('/offres/recommended', [EtudiantController::class, 'getRecommendedOffers']);
         });
 
         // Routes pour les entreprises
